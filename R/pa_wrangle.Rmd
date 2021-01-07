@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse) #dplyr, ggplot2, etc
 library(lubridate) #better time/date manipulation
 library(viridis) #better color scales
-library(janitor) #used for clean_names function
+#library(janitor) #used for clean_names function
 ```
 
 
@@ -83,4 +83,8 @@ summary_df <- df %>%
   group_by(loc_tag, date, hour) %>%
   summarize(mean = mean(`PM2.5_CF1_ug/m3`),
             sd = sd(`PM2.5_CF1_ug/m3`))
+
+ggplot(summary_df, aes(x = hour, y = mean, color = loc_tag))+
+  facet_wrap(~date)+
+  geom_path()
 ```
