@@ -7,38 +7,19 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(tidyverse) #dplyr, ggplot2, etc
+library(tidyverse) #dplyr, etc
 library(lubridate) #better time/date manipulation
-library(viridis) #better color scales
-library(ggthemes) #better themes
-#library(janitor) #used for clean_names function
 ```
 
 
 ```{r data}
+#do not run this often. large dataframes!
 my_file_paths <- list.files(path = "data/raw", pattern = ".+\\(*(outside*)\\w+\\)", full.names = TRUE)
 
 #my_file_paths <- list.files(path="data/raw", pattern=".+(E )",full.names=TRUE) #smaller subset
 #my_file_paths <- list.files(path="data/raw", pattern="SE",full.names=TRUE) #smaller subset
 
-# raw_data <- my_file_paths %>%
-#   set_names() %>%
-#   map_dfr(read_csv, .id = "source") %>%
-#   mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
-
-# raw_data <- my_file_paths %>%
-#   set_names() %>%
-#   #map_dfr(~read_csv(.x, col_types = cols(.default = "c")), .id="source") %>%
-#   map_dfr(~read_csv(.x, col_types = cols(entry_id = col_double(),
-#                                          `>=0.3um/dl` = col_double(),
-#                                          `>=0.5um/dl` = col_double(),
-#                                          `>1.0um/dl` = col_double(),
-#                                          `>=2.5um/dl` = col_double(),
-#                                          `>=5.0um/dl` = col_double(),
-#                                          `>=10.0um/dl` = col_double(),
-#                                          `PM1.0_ATM_ug/m3` = col_double())), .id="source") %>%
-#   mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
-
+#pray that R doesn't crash when you run this
 raw_data <- my_file_paths %>%
   set_names() %>%
   map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
@@ -49,9 +30,8 @@ raw_data <- my_file_paths %>%
 
 
 ```{r tidying}
-
 df <- raw_data %>%
-  drop_na(`PM2.5_CF1_ug/m3`) %>% #removes empty values for stat of interest
+  #drop_na(`PM2.5_CF1_ug/m3`) %>% #removes empty values for stat of interest
   mutate(created_at = as_datetime(created_at), #converting from character to date time format; tz is in UTC
          date = date(created_at), #picking out just the date
          #time = strftime(created_at, format="%H:%M:%S"), # old way of picking time; outputs char
@@ -69,9 +49,7 @@ df <- raw_data %>%
          hour_round = hour(round_date(created_at, unit="hour")),
          year = year(created_at),
          month = month(created_at, label=TRUE),
-         day = day(created_at)) %>%
-  filter(`PM2.5_CF1_ug/m3` <= 1000)
-  #filter(loc_tag!="South Woodstock") #this location has some crazy numbers
+         day = day(created_at))
 
 
 unique_locations <- unique(df$loc_tag) #creates list of unique locations for quick reference
@@ -79,124 +57,34 @@ unique_vars <- names(df) #creates list of columns for quick reference
 ```
 
 ```{r summary dfs}
-hourly_df <- df %>%
-  group_by(loc_tag, date, hour, lat, long) %>%
-  summarize(mean_pm25 = mean(`PM2.5_CF1_ug/m3`),
-            sd_pm25 = sd(`PM2.5_CF1_ug/m3`)) %>%
-  mutate(month=month(date,label=TRUE),
-         day=day(date))
+vars <- names(df)[4:20] #check to make sure these include all vars of interest. Uninteresting ones can always be dropped later.
 
-#write.csv(hourly_df,"data/wrangled/hourly_df.csv", row.names = TRUE)
+#faster to process than the above wrangling but still takes time
 
 daily_df <- df %>%
   group_by(loc_tag, date, lat, long) %>%
-  summarize(mean_pm25 = mean(`PM2.5_CF1_ug/m3`),
-            sd_pm25 = sd(`PM2.5_CF1_ug/m3`)) %>%
-  mutate(month=month(date,label=TRUE),
-         day=day(date))
+  summarize_at(vars,
+               mean,
+               na.rm=TRUE) %>%
+  mutate(month = month(date, label=TRUE),
+         day = day(date))
 
+hourly_df <- df %>%
+  group_by(loc_tag, date, hour, lat, long) %>%
+  summarize_at(vars,
+               mean,
+               na.rm=TRUE) %>%
+  mutate(month = month(date, label=TRUE),
+         day = day(date))
+```
+
+```{r saving large dfs}
+#do not run this often. large dataframes!
+write.csv(raw_data, "data/wrangled/raw_df.csv", row.names=TRUE)
+write.csv(df, "data/wrangled/wrangled_df.csv", row.names=TRUE)
+```
+
+```{r saving summary dfs}
+write.csv(hourly_df,"data/wrangled/hourly_df.csv", row.names = TRUE)
 write.csv(daily_df, "data/wrangled/daily_df.csv", row.names=TRUE)
 ```
-
-
-```{r hourly viz}
-hourly_viz_pm25 <- ggplot(hourly_df, aes(x=date, y=mean_pm25, color=loc_tag))+
-  #geom_line(alpha=0.7)+
-  geom_point(alpha=0.7,shape=4)+
-  theme(legend.position="none")+
-  labs(title="Raw PM2.5, averaged hourly, colored by sensor")
-
-hourly_viz_pm25
-```
-
-
-```{r daily viz}
-daily_viz_pm25 <- ggplot(daily_df, aes(x = date, y = mean_pm25, color = loc_tag))+
-  #geom_line(alpha=0.7)+
-  geom_point(alpha=0.7,shape=4)+
-  theme(legend.position="none")+
-  labs(title="Raw PM2.5, averaged daily, colored by sensor")
-
-daily_viz_pm25
-```
-
-```{r daily heatmap}
-daily_mini <- daily_df %>%
-  filter(str_detect(loc_tag, "STAR"))
-
-#ggplot(data=subset(mini_set, month%in%c("Oct","Nov")), aes(x=day, y=0, fill=mean_pm25))+
-ggplot(daily_mini, aes(x=day, y=0, fill=mean_pm25))+
-  geom_tile()+
-  scale_fill_viridis(name = "Daily PM25", option = "plasma")+
-  facet_grid(loc_tag~month)+
-  scale_x_continuous(breaks = c(1,10,20,31))+
-  theme_minimal(base_size=8)+
-  labs(title = paste("Daily PM25"), x= "Day", y="")+
-  theme(legend.position="bottom",
-        #legend.position="bottom",
-        plot.title=element_text(size=14, hjust = 0),
-        #axis.text.y=element_text(size=6),
-        axis.text.y=element_blank(),
-        strip.background = element_rect(colour="white"),
-        axis.ticks=element_blank(),
-        axis.text=element_text(size=7),
-        #legend.title=element_text(size=8),
-        #legend.text=element_text(size=6),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-```
-
-```{r hourly heatmap}
-# Source: https://www.r-graph-gallery.com/283-the-hourly-heatmap.html
-hour_mini <- hourly_df %>%
-  filter(str_detect(loc_tag, "STAR"))
-
-hourly_heatmap_pm25_STAR <- ggplot(hour_mini, aes(x=day, y=hour, fill=mean_pm25))+
-#ggplot(subset(hour_mini, month%in%c("Oct","Nov")), aes(day, hour, fill = mean_pm25))+
-  #geom_tile(color = "white", size=0.1)+
-  geom_tile()+
-  scale_fill_viridis(name = "Hrly PM25", option = "plasma")+
-  facet_grid(loc_tag~month)+
-  scale_y_continuous(trans = "reverse", breaks = unique(df$hour))+
-  scale_x_continuous(breaks = c(1,10,20,31))+
-  theme_minimal(base_size=8)+
-  labs(title = paste("Hourly PM25"), x= "Day", y = "Hour commencing")+
-  theme(legend.position="bottom",
-        plot.title=element_text(size=14, hjust = 0),
-        axis.text.y=element_text(size=6),
-        strip.background = element_rect(colour="white"),
-        axis.ticks=element_blank(),
-        axis.text=element_text(size=7),
-        legend.title=element_text(size=8),
-        legend.text=element_text(size=6),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-
-hourly_heatmap_pm25_STAR
-
-#flip flop
-# ggplot(data=subset(df, month%in%c("Sep","Oct","Nov")), aes(hour, day, fill = `PM2.5_CF1_ug/m3`))+
-#   #geom_tile(color = "white", size=0.1)+
-#   geom_tile()+
-#   scale_fill_viridis(name = "Hrly PM25", option = "plasma")+
-#   facet_grid(month~loc_tag)+
-#   scale_x_continuous(trans = "reverse", breaks = unique(df$hour))+
-#   scale_y_continuous(breaks = c(1,10,20,31))+
-#   theme_minimal(base_size=8)+
-#   labs(title = paste("Hourly PM25"), y= "Day", x = "Hour commencing")+
-#   theme(legend.position="bottom",
-#         plot.title=element_text(size=14, hjust = 0),
-#         axis.text.x=element_text(size=6),
-#         strip.background = element_rect(colour="white"),
-#         axis.ticks=element_blank(),
-#         axis.text=element_text(size=7),
-#         legend.title=element_text(size=8),
-#         legend.text=element_text(size=6),
-#         panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-```
-
-```{r saving viz}
-ggsave("hourly_viz_pm25.png", plot=hourly_viz_pm25, path="figures/")
-ggsave("daily_viz_pm25.png", plot=daily_viz_pm25, path="figures/")
-
-ggsave("hourly_heatmap_pm25_STAR.png", plot=hourly_heatmap_pm25_STAR, path="figures/")
-```
-
