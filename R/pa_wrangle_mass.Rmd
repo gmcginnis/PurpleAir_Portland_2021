@@ -16,10 +16,10 @@ library(ggthemes) #better themes
 
 
 ```{r data}
-#my_file_paths <- list.files(path = "data/raw", pattern = ".+\\(*(outside*)\\w+\\)", full.names = TRUE)
+my_file_paths <- list.files(path = "data/raw", pattern = ".+\\(*(outside*)\\w+\\)", full.names = TRUE)
 
 #my_file_paths <- list.files(path="data/raw", pattern=".+(E )",full.names=TRUE) #smaller subset
-my_file_paths <- list.files(path="data/raw", pattern="SE",full.names=TRUE) #smaller subset
+#my_file_paths <- list.files(path="data/raw", pattern="SE",full.names=TRUE) #smaller subset
 
 # raw_data <- my_file_paths %>%
 #   set_names() %>%
@@ -76,6 +76,23 @@ unique_locations <- unique(df$loc_tag) #creates list of unique locations for qui
 unique_vars <- names(df) #creates list of columns for quick reference
 ```
 
+```{r summary dfs}
+hourly_df <- df %>%
+  group_by(loc_tag, date, hour, lat, long) %>%
+  summarize(mean_pm25 = mean(`PM2.5_CF1_ug/m3`),
+            sd_pm25 = sd(`PM2.5_CF1_ug/m3`)) %>%
+  mutate(month=month(date,label=TRUE),
+         day=day(date))
+
+daily_df <- df %>%
+  group_by(loc_tag, date, lat, long) %>%
+  summarize(mean_pm25 = mean(`PM2.5_CF1_ug/m3`),
+            sd_pm25 = sd(`PM2.5_CF1_ug/m3`)) %>%
+  mutate(month=month(date,label=TRUE),
+         day=day(date))
+```
+
+
 
 ```{r hourly heatmap}
 # Source: https://www.r-graph-gallery.com/283-the-hourly-heatmap.html
@@ -120,10 +137,14 @@ ggplot(data=subset(df, month%in%c("Sep","Oct","Nov")), aes(hour, day, fill = `PM
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 ```
 
+```{r summary viz}
+
+```
+
 
 ```{r summary stats}
 summary_df <- df %>%
-  group_by(loc_tag, date, hour) %>%
+  group_by(loc_tag, date, hour, lat, long) %>%
   summarize(mean = mean(`PM2.5_CF1_ug/m3`),
             sd = sd(`PM2.5_CF1_ug/m3`)) %>%
   mutate(month = month(date, label=TRUE),
@@ -137,19 +158,20 @@ ggplot(summary_df, aes(x = date, y = mean, color=loc_tag))+
   geom_line(alpha=0.1)+
   geom_point(size=0.2, shape=3, alpha=0.5)+
   theme_minimal(base_size=8)+
-  theme(legend.position="bottom",
+  theme(legend.title=element_text(size=8),
+        legend.text=element_text(size=6),
+        #legend.position="bottom",
+        legend.position="none",
         plot.title=element_text(size=14, hjust = 0),
         axis.text.y=element_text(size=6),
         strip.background = element_rect(colour="white"),
         axis.ticks=element_blank(),
-        axis.text=element_text(size=7),
-        legend.title=element_text(size=8),
-        legend.text=element_text(size=6))
+        axis.text=element_text(size=7))
 ```
 
 ```{r daily heatmap}
 summary_daily <- summary_df %>%
-  group_by(loc_tag, date) %>%
+  group_by(loc_tag, date, lat, long) %>%
   rename(mean_orig = mean,
          sd_orig = sd) %>%
   summarize(mean = mean(mean_orig),
@@ -165,15 +187,16 @@ ggplot(data=subset(summary_daily, month%in%c("Oct","Nov")), aes(x=day, y=0, fill
   scale_x_continuous(breaks = c(1,10,20,31))+
   theme_minimal(base_size=8)+
   labs(title = paste("Daily PM25"), x= "Day", y="")+
-  theme(legend.position="bottom",
+  theme(legend.position="none",
+        #legend.position="bottom",
         plot.title=element_text(size=14, hjust = 0),
         #axis.text.y=element_text(size=6),
         axis.text.y=element_blank(),
         strip.background = element_rect(colour="white"),
         axis.ticks=element_blank(),
         axis.text=element_text(size=7),
-        legend.title=element_text(size=8),
-        legend.text=element_text(size=6),
+        #legend.title=element_text(size=8),
+        #legend.text=element_text(size=6),
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 ```
 
