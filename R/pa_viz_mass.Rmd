@@ -1,0 +1,121 @@
+---
+title: "pa_viz_mass"
+author: "Gillian McGinnis"
+date: "1/12/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse) #dplyr, ggplot2, etc
+library(lubridate) #better time/date manipulation
+library(viridis) #better color scales
+library(ggthemes) #better themes
+#library(janitor) #used for clean_names function
+```
+
+```{r loading dfs}
+```
+
+
+```{r hourly viz}
+hourly_viz_pm25 <- ggplot(hourly_df, aes(x=date, y=mean_pm25, color=loc_tag))+
+  #geom_line(alpha=0.7)+
+  geom_point(alpha=0.7,shape=4)+
+  theme(legend.position="none")+
+  labs(title="Raw PM2.5, averaged hourly, colored by sensor")
+
+hourly_viz_pm25
+```
+
+
+```{r daily viz}
+daily_viz_pm25 <- ggplot(daily_df, aes(x = date, y = mean_pm25, color = loc_tag))+
+  #geom_line(alpha=0.7)+
+  geom_point(alpha=0.7,shape=4)+
+  theme(legend.position="none")+
+  labs(title="Raw PM2.5, averaged daily, colored by sensor")
+
+daily_viz_pm25
+```
+
+```{r daily heatmap}
+daily_mini <- daily_df %>%
+  filter(str_detect(loc_tag, "STAR"))
+
+#ggplot(data=subset(mini_set, month%in%c("Oct","Nov")), aes(x=day, y=0, fill=mean_pm25))+
+ggplot(daily_mini, aes(x=day, y=0, fill=mean_pm25))+
+  geom_tile()+
+  scale_fill_viridis(name = "Daily PM25", option = "plasma")+
+  facet_grid(loc_tag~month)+
+  scale_x_continuous(breaks = c(1,10,20,31))+
+  theme_minimal(base_size=8)+
+  labs(title = paste("Daily PM25"), x= "Day", y="")+
+  theme(legend.position="bottom",
+        #legend.position="bottom",
+        plot.title=element_text(size=14, hjust = 0),
+        #axis.text.y=element_text(size=6),
+        axis.text.y=element_blank(),
+        strip.background = element_rect(colour="white"),
+        axis.ticks=element_blank(),
+        axis.text=element_text(size=7),
+        #legend.title=element_text(size=8),
+        #legend.text=element_text(size=6),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+```{r hourly heatmap}
+# Source: https://www.r-graph-gallery.com/283-the-hourly-heatmap.html
+hour_mini <- hourly_df %>%
+  filter(str_detect(loc_tag, "STAR"))
+
+hourly_heatmap_pm25_STAR <- ggplot(hour_mini, aes(x=day, y=hour, fill=mean_pm25))+
+#ggplot(subset(hour_mini, month%in%c("Oct","Nov")), aes(day, hour, fill = mean_pm25))+
+  #geom_tile(color = "white", size=0.1)+
+  geom_tile()+
+  scale_fill_viridis(name = "Hrly PM25", option = "plasma")+
+  facet_grid(loc_tag~month)+
+  scale_y_continuous(trans = "reverse", breaks = unique(df$hour))+
+  scale_x_continuous(breaks = c(1,10,20,31))+
+  theme_minimal(base_size=8)+
+  labs(title = paste("Hourly PM25"), x= "Day", y = "Hour commencing")+
+  theme(legend.position="bottom",
+        plot.title=element_text(size=14, hjust = 0),
+        axis.text.y=element_text(size=6),
+        strip.background = element_rect(colour="white"),
+        axis.ticks=element_blank(),
+        axis.text=element_text(size=7),
+        legend.title=element_text(size=8),
+        legend.text=element_text(size=6),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+hourly_heatmap_pm25_STAR
+
+#flip flop
+# ggplot(data=subset(df, month%in%c("Sep","Oct","Nov")), aes(hour, day, fill = `PM2.5_CF1_ug/m3`))+
+#   #geom_tile(color = "white", size=0.1)+
+#   geom_tile()+
+#   scale_fill_viridis(name = "Hrly PM25", option = "plasma")+
+#   facet_grid(month~loc_tag)+
+#   scale_x_continuous(trans = "reverse", breaks = unique(df$hour))+
+#   scale_y_continuous(breaks = c(1,10,20,31))+
+#   theme_minimal(base_size=8)+
+#   labs(title = paste("Hourly PM25"), y= "Day", x = "Hour commencing")+
+#   theme(legend.position="bottom",
+#         plot.title=element_text(size=14, hjust = 0),
+#         axis.text.x=element_text(size=6),
+#         strip.background = element_rect(colour="white"),
+#         axis.ticks=element_blank(),
+#         axis.text=element_text(size=7),
+#         legend.title=element_text(size=8),
+#         legend.text=element_text(size=6),
+#         panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+
+```{r saving viz}
+ggsave("hourly_viz_pm25.png", plot=hourly_viz_pm25, path="figures/")
+ggsave("daily_viz_pm25.png", plot=daily_viz_pm25, path="figures/")
+
+ggsave("hourly_heatmap_pm25_STAR.png", plot=hourly_heatmap_pm25_STAR, path="figures/")
+```
