@@ -12,14 +12,11 @@ library(lubridate) #better time/date manipulation
 library(viridis) #better color scales
 library(ggthemes) #better themes
 #library(janitor) #used for clean_names function
-library(maps) #map data
 ```
 
 
 ```{r data}
-#my_file_paths <- list.files(path = "data/raw", pattern = ".+\\(*(outside*)\\w+\\)", full.names = TRUE)
-
-my_file_paths <- list.files(path = "drafting/blob3", pattern = ".+\\(*(outside*)\\w+\\)", full.names = TRUE) #temporarily using a smaller dataset
+my_file_paths <- list.files(path = "data/raw", pattern = ".+\\(*(outside*)\\w+\\)", full.names = TRUE)
 
 raw_data <- my_file_paths %>%
   set_names() %>%
@@ -153,20 +150,5 @@ ggplot(summary_daily, aes(x=day, y=0, fill=mean))+
         legend.title=element_text(size=8),
         legend.text=element_text(size=6),
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-```
-
-```{r map test, echo=FALSE, eval=FALSE}
-#just some quick tests. might come back to this later.
-#https://www.r-graph-gallery.com/330-bubble-map-with-ggplot2.html
-USA <- map_data("world") %>%
-  filter(region == "USA")
-
-ggplot()+
-  geom_polygon(data = USA, aes(x=long, y = lat, group = group), fill="grey", alpha=0.3)+
-  geom_point(data=df, aes(x=long, y=lat,color=`PM2.5_CF1_ug/m3`))+
-  theme_void()+
-  ylim(45.404977384752954,45.65800389137894)+
-  xlim(-122.854374,-122.565464)+
-  coord_map()
 ```
 
