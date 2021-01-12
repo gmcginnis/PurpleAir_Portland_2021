@@ -69,7 +69,9 @@ df <- raw_data %>%
          hour_round = hour(round_date(created_at, unit="hour")),
          year = year(created_at),
          month = month(created_at, label=TRUE),
-         day = day(created_at))
+         day = day(created_at)) %>%
+  filter(`PM2.5_CF1_ug/m3` <= 1000)
+  #filter(loc_tag!="South Woodstock") #this location has some crazy numbers
 
 
 unique_locations <- unique(df$loc_tag) #creates list of unique locations for quick reference
@@ -84,20 +86,72 @@ hourly_df <- df %>%
   mutate(month=month(date,label=TRUE),
          day=day(date))
 
+#write.csv(hourly_df,"data/wrangled/hourly_df.csv", row.names = TRUE)
+
 daily_df <- df %>%
   group_by(loc_tag, date, lat, long) %>%
   summarize(mean_pm25 = mean(`PM2.5_CF1_ug/m3`),
             sd_pm25 = sd(`PM2.5_CF1_ug/m3`)) %>%
   mutate(month=month(date,label=TRUE),
          day=day(date))
+
+write.csv(daily_df, "data/wrangled/daily_df.csv", row.names=TRUE)
 ```
 
 
+```{r hourly viz}
+hourly_viz_pm25 <- ggplot(hourly_df, aes(x=date, y=mean_pm25, color=loc_tag))+
+  #geom_line(alpha=0.7)+
+  geom_point(alpha=0.7,shape=4)+
+  theme(legend.position="none")+
+  labs(title="Raw PM2.5, averaged hourly, colored by sensor")
+
+hourly_viz_pm25
+```
+
+
+```{r daily viz}
+daily_viz_pm25 <- ggplot(daily_df, aes(x = date, y = mean_pm25, color = loc_tag))+
+  #geom_line(alpha=0.7)+
+  geom_point(alpha=0.7,shape=4)+
+  theme(legend.position="none")+
+  labs(title="Raw PM2.5, averaged daily, colored by sensor")
+
+daily_viz_pm25
+```
+
+```{r daily heatmap}
+daily_mini <- daily_df %>%
+  filter(str_detect(loc_tag, "STAR"))
+
+#ggplot(data=subset(mini_set, month%in%c("Oct","Nov")), aes(x=day, y=0, fill=mean_pm25))+
+ggplot(daily_mini, aes(x=day, y=0, fill=mean_pm25))+
+  geom_tile()+
+  scale_fill_viridis(name = "Daily PM25", option = "plasma")+
+  facet_grid(loc_tag~month)+
+  scale_x_continuous(breaks = c(1,10,20,31))+
+  theme_minimal(base_size=8)+
+  labs(title = paste("Daily PM25"), x= "Day", y="")+
+  theme(legend.position="bottom",
+        #legend.position="bottom",
+        plot.title=element_text(size=14, hjust = 0),
+        #axis.text.y=element_text(size=6),
+        axis.text.y=element_blank(),
+        strip.background = element_rect(colour="white"),
+        axis.ticks=element_blank(),
+        axis.text=element_text(size=7),
+        #legend.title=element_text(size=8),
+        #legend.text=element_text(size=6),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
 
 ```{r hourly heatmap}
 # Source: https://www.r-graph-gallery.com/283-the-hourly-heatmap.html
+hour_mini <- hourly_df %>%
+  filter(str_detect(loc_tag, "STAR"))
 
-ggplot(df, aes(day, hour, fill = `PM2.5_CF1_ug/m3`))+
+hourly_heatmap_pm25_STAR <- ggplot(hour_mini, aes(x=day, y=hour, fill=mean_pm25))+
+#ggplot(subset(hour_mini, month%in%c("Oct","Nov")), aes(day, hour, fill = mean_pm25))+
   #geom_tile(color = "white", size=0.1)+
   geom_tile()+
   scale_fill_viridis(name = "Hrly PM25", option = "plasma")+
@@ -116,87 +170,33 @@ ggplot(df, aes(day, hour, fill = `PM2.5_CF1_ug/m3`))+
         legend.text=element_text(size=6),
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 
+hourly_heatmap_pm25_STAR
+
 #flip flop
-ggplot(data=subset(df, month%in%c("Sep","Oct","Nov")), aes(hour, day, fill = `PM2.5_CF1_ug/m3`))+
-  #geom_tile(color = "white", size=0.1)+
-  geom_tile()+
-  scale_fill_viridis(name = "Hrly PM25", option = "plasma")+
-  facet_grid(month~loc_tag)+
-  scale_x_continuous(trans = "reverse", breaks = unique(df$hour))+
-  scale_y_continuous(breaks = c(1,10,20,31))+
-  theme_minimal(base_size=8)+
-  labs(title = paste("Hourly PM25"), y= "Day", x = "Hour commencing")+
-  theme(legend.position="bottom",
-        plot.title=element_text(size=14, hjust = 0),
-        axis.text.x=element_text(size=6),
-        strip.background = element_rect(colour="white"),
-        axis.ticks=element_blank(),
-        axis.text=element_text(size=7),
-        legend.title=element_text(size=8),
-        legend.text=element_text(size=6),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+# ggplot(data=subset(df, month%in%c("Sep","Oct","Nov")), aes(hour, day, fill = `PM2.5_CF1_ug/m3`))+
+#   #geom_tile(color = "white", size=0.1)+
+#   geom_tile()+
+#   scale_fill_viridis(name = "Hrly PM25", option = "plasma")+
+#   facet_grid(month~loc_tag)+
+#   scale_x_continuous(trans = "reverse", breaks = unique(df$hour))+
+#   scale_y_continuous(breaks = c(1,10,20,31))+
+#   theme_minimal(base_size=8)+
+#   labs(title = paste("Hourly PM25"), y= "Day", x = "Hour commencing")+
+#   theme(legend.position="bottom",
+#         plot.title=element_text(size=14, hjust = 0),
+#         axis.text.x=element_text(size=6),
+#         strip.background = element_rect(colour="white"),
+#         axis.ticks=element_blank(),
+#         axis.text=element_text(size=7),
+#         legend.title=element_text(size=8),
+#         legend.text=element_text(size=6),
+#         panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 ```
 
-```{r summary viz}
+```{r saving viz}
+ggsave("hourly_viz_pm25.png", plot=hourly_viz_pm25, path="figures/")
+ggsave("daily_viz_pm25.png", plot=daily_viz_pm25, path="figures/")
 
-```
-
-
-```{r summary stats}
-summary_df <- df %>%
-  group_by(loc_tag, date, hour, lat, long) %>%
-  summarize(mean = mean(`PM2.5_CF1_ug/m3`),
-            sd = sd(`PM2.5_CF1_ug/m3`)) %>%
-  mutate(month = month(date, label=TRUE),
-         day = day(date))
-
-# ggplot(summary_df, aes(x = hour, y = mean, color = loc_tag))+
-#   facet_grid(day~month)+
-#   geom_path()
-
-ggplot(summary_df, aes(x = date, y = mean, color=loc_tag))+
-  geom_line(alpha=0.1)+
-  geom_point(size=0.2, shape=3, alpha=0.5)+
-  theme_minimal(base_size=8)+
-  theme(legend.title=element_text(size=8),
-        legend.text=element_text(size=6),
-        #legend.position="bottom",
-        legend.position="none",
-        plot.title=element_text(size=14, hjust = 0),
-        axis.text.y=element_text(size=6),
-        strip.background = element_rect(colour="white"),
-        axis.ticks=element_blank(),
-        axis.text=element_text(size=7))
-```
-
-```{r daily heatmap}
-summary_daily <- summary_df %>%
-  group_by(loc_tag, date, lat, long) %>%
-  rename(mean_orig = mean,
-         sd_orig = sd) %>%
-  summarize(mean = mean(mean_orig),
-            sd = sd(mean_orig)) %>%
-  mutate(month = month(date, label=TRUE),
-         day = day(date))
-
-ggplot(data=subset(summary_daily, month%in%c("Oct","Nov")), aes(x=day, y=0, fill=mean))+
-#ggplot(summary_daily, aes(x=day, y=0, fill=mean))+
-  geom_tile()+
-  scale_fill_viridis(name = "Daily PM25", option = "plasma")+
-  facet_grid(loc_tag~month)+
-  scale_x_continuous(breaks = c(1,10,20,31))+
-  theme_minimal(base_size=8)+
-  labs(title = paste("Daily PM25"), x= "Day", y="")+
-  theme(legend.position="none",
-        #legend.position="bottom",
-        plot.title=element_text(size=14, hjust = 0),
-        #axis.text.y=element_text(size=6),
-        axis.text.y=element_blank(),
-        strip.background = element_rect(colour="white"),
-        axis.ticks=element_blank(),
-        axis.text=element_text(size=7),
-        #legend.title=element_text(size=8),
-        #legend.text=element_text(size=6),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+ggsave("hourly_heatmap_pm25_STAR.png", plot=hourly_heatmap_pm25_STAR, path="figures/")
 ```
 
