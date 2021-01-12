@@ -16,17 +16,42 @@ library(ggthemes) #better themes
 
 
 ```{r data}
-my_file_paths <- list.files(path = "data/raw", pattern = ".+\\(*(outside*)\\w+\\)", full.names = TRUE)
+#my_file_paths <- list.files(path = "data/raw", pattern = ".+\\(*(outside*)\\w+\\)", full.names = TRUE)
+
+#my_file_paths <- list.files(path="data/raw", pattern=".+(E )",full.names=TRUE) #smaller subset
+my_file_paths <- list.files(path="data/raw", pattern="SE",full.names=TRUE) #smaller subset
+
+# raw_data <- my_file_paths %>%
+#   set_names() %>%
+#   map_dfr(read_csv, .id = "source") %>%
+#   mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
+
+# raw_data <- my_file_paths %>%
+#   set_names() %>%
+#   #map_dfr(~read_csv(.x, col_types = cols(.default = "c")), .id="source") %>%
+#   map_dfr(~read_csv(.x, col_types = cols(entry_id = col_double(),
+#                                          `>=0.3um/dl` = col_double(),
+#                                          `>=0.5um/dl` = col_double(),
+#                                          `>1.0um/dl` = col_double(),
+#                                          `>=2.5um/dl` = col_double(),
+#                                          `>=5.0um/dl` = col_double(),
+#                                          `>=10.0um/dl` = col_double(),
+#                                          `PM1.0_ATM_ug/m3` = col_double())), .id="source") %>%
+#   mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
 
 raw_data <- my_file_paths %>%
   set_names() %>%
-  map_dfr(read_csv, .id = "source") %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         .default = col_double())), .id="source") %>%
   mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
 ```
+
 
 ```{r tidying}
 
 df <- raw_data %>%
+  drop_na(`PM2.5_CF1_ug/m3`) %>% #removes empty values for stat of interest
   mutate(created_at = as_datetime(created_at), #converting from character to date time format; tz is in UTC
          date = date(created_at), #picking out just the date
          #time = strftime(created_at, format="%H:%M:%S"), # old way of picking time; outputs char
@@ -40,7 +65,6 @@ df <- raw_data %>%
          long = as.numeric(long), #converting to numeric from character
          loc_tag = str_extract(source, "^[^\\(]+"), #grabbing location tag
          loc_tag = str_trim(loc_tag, side = "right")) %>% #removing extra whitespace
-  drop_na(`PM2.5_CF1_ug/m3`) %>% #removes empty values for stat of interest
   mutate(hour = hour(created_at),
          hour_round = hour(round_date(created_at, unit="hour")),
          year = year(created_at),
@@ -133,7 +157,8 @@ summary_daily <- summary_df %>%
   mutate(month = month(date, label=TRUE),
          day = day(date))
 
-ggplot(summary_daily, aes(x=day, y=0, fill=mean))+
+ggplot(data=subset(summary_daily, month%in%c("Oct","Nov")), aes(x=day, y=0, fill=mean))+
+#ggplot(summary_daily, aes(x=day, y=0, fill=mean))+
   geom_tile()+
   scale_fill_viridis(name = "Daily PM25", option = "plasma")+
   facet_grid(loc_tag~month)+
