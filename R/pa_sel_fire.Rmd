@@ -1,0 +1,128 @@
+---
+title: "pa_sel_fire"
+author: "Gillian McGinnis"
+date: "1/13/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+library(lubridate)
+library(janitor)
+```
+
+```{r data loading}
+sel_paths <- list.files(path = "data/sel_subset/sel_raw", full.names = TRUE)
+
+sel_raw <- sel_paths %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         .default = col_double())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/\\w+\\/", "")) #removes filepath name
+```
+
+```{r wrangle}
+sel_wrangled <- sel_raw %>%
+  #drop_na(`PM2.5_CF1_ug/m3`) %>% #removes empty values for stat of interest
+  mutate(created_at = as_datetime(created_at), #converting from character to date time format; tz is in UTC
+         date = date(created_at), #picking out just the date
+         #time = strftime(created_at, format="%H:%M:%S"), # old way of picking time; outputs char
+         time = hms::as_hms(created_at), #picking out just the time
+         time_est = time) %>% #currently working on rounding out the seconds but for now it stands as is
+  mutate(coords = str_extract(source, "([0-9])\\w+\\.([0-9])\\w+\\s\\-([0-9])\\w+\\.([0-9])\\w+"), #grabbing coord data
+         lat = str_extract(coords, "\\d+\\.\\d+\\s"), #latitude (north)
+         lat = str_trim(lat, side = "right"), #removing extra whitespace
+         lat = as.numeric(lat), #converting to numeric from character
+         long = str_extract(coords, "\\-\\d+\\.\\d+"), #longitude (negative here, so west)
+         long = as.numeric(long), #converting to numeric from character
+         loc_tag = str_extract(source, "^[^\\(]+"), #grabbing location tag
+         loc_tag = str_trim(loc_tag, side = "right")) %>% #removing extra whitespace
+  mutate(hour = hour(created_at),
+         hour_round = hour(round_date(created_at, unit="hour")),
+         year = year(created_at),
+         month = month(created_at, label=TRUE),
+         day = day(created_at)) %>%
+  mutate(sensor = case_when(
+    str_detect(loc_tag, " B") ~ "B"
+  )) %>%
+  mutate(sensor = replace_na(sensor, "A"))
+
+unique_vars <- names(sel_wrangled) #creates list of columns for quick reference
+```
+
+```{r pm25 viz}
+ggplot(sel_wrangled, aes(x=created_at, y=`PM2.5_ATM_ug/m3`, color=sensor))+
+  #geom_point(shape=1,alpha=0.3)+
+  geom_path(alpha=0.5)+
+  scale_x_datetime(date_breaks="1 day",date_labels="%d")+
+  scale_y_continuous(breaks=seq(0,530,50))+
+  #theme_economist()+
+  theme_igray()+
+  theme(legend.position="bottom")+
+  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="Sensor")
+```
+
+```{r deq}
+deq_raw <- read_csv("data/sel_subset/deq.csv")
+
+deq_wrangled <- deq_raw %>%
+  clean_names() %>%
+  rename(pm25 = pm2_5_ug_m3_l) %>%
+  #mutate(date_time = strptime(.$date_time, "%H:%M %m/%d/%Y"))
+  mutate(date_time_adj = as_datetime(date_time, format="%H:%M %m/%d/%Y"))
+#as.Date(deq_wrangled$date_time, "%H:%M %m/%d/%Y")
+#strptime(deq_wrangled$date_time, "%H:%M %m/%d/%Y")
+  #as.Date(df$Date, "%m/%d/%Y %H:%M:%S")
+
+ggplot(deq_wrangled, aes(x=date_time_adj, y=pm25))+
+  geom_path()+
+  #geom_point()+
+  scale_x_datetime(date_breaks="1 day",date_labels="%d")
+```
+
+```{r combining}
+sel_mini <- sel_wrangled %>%
+  select(created_at, `PM2.5_ATM_ug/m3`, sensor) %>%
+  rename(date_time = created_at,
+         pm25 = `PM2.5_ATM_ug/m3`) %>%
+  drop_na() %>%
+  mutate(type = "PA")
+
+deq_mini <- deq_wrangled %>%
+  select(pm25, date_time_adj) %>%
+  rename(date_time = date_time_adj) %>%
+  mutate(sensor = "DEQ",
+         type = "DEQ") %>%
+  drop_na()
+
+ggplot(sel_mini, aes(x=date_time, y=pm25, color=sensor))+
+  geom_path(alpha=0.7)+
+  geom_path(alpha=0.7,data=deq_mini)+
+  scale_x_datetime(date_breaks="1 day",date_labels="%d")+
+  scale_y_continuous(breaks=seq(0,530,50))+
+  #theme_economist()+
+  theme_igray()+
+  scale_color_brewer(palette="Set2")+
+  theme(legend.position="bottom")+
+  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="Sensor:")
+
+
+
+full_df <- full_join(deq_mini, sel_mini)
+
+ggplot(full_df, aes(x=date_time, y=pm25, color=sensor))+
+  facet_wrap(~type)+
+  geom_path(alpha=0.7)+
+  scale_x_datetime(date_breaks="1 day",date_labels="%d")+
+  scale_y_continuous(breaks=seq(0,550,50))+
+  #theme_few()+
+  theme_igray()+
+  scale_color_brewer(palette="Set2")+
+  theme(legend.position="bottom")+
+  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="Sensor:")
+```
+
+
