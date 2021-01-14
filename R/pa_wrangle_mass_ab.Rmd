@@ -150,7 +150,37 @@ ab_comp <- all_raw %>%
          month = month(created_at, label=TRUE),
          day = day(created_at)) %>%
   group_by(loc_tag, ab, date, hour, min) %>%
-  summarize(mean = mean(`PM2.5_ATM_ug/m3`)) #var_of_interest
+  summarize(mean = mean(`PM2.5_ATM_ug/m3`)) %>% #var_of_interest
+  ungroup() %>%
+  pivot_wider(names_from = ab, values_from=mean) %>%
+  #per_change_a = ((A-B)/A)*100,
+         #per_change_b = ((B-A)/B)*100,
+  #mutate(per_change_abs = abs(((A-B)/A)*100)) %>%
+  mutate(per_change = ((A-B)/A)*100) %>%
+  #replace(per_change, is.infinite(x), NA) %>%
+  #replace(per_change, is.infinite(per_change), NA) %>%
+  #mutate(per_change = case_when(is.infinite(per_change)==TRUE ~ NA)) %>%
+  #drop_na(per_change) %>%
+  select(loc_tag, per_change) %>%
+  #per_change_alt = case_when(per_change > 100) ~ NA,
+  mutate(per_change_alt = case_when(per_change < 100 ~ per_change)) %>%
+  mutate(per_change_alt = case_when(per_change > -100 ~ per_change)) %>%
+  #mutate(per_change_alt = case_when((per_change > 100 | per_change < 0) ~ NA))
+  drop_na(per_change_alt) %>%
+  select(loc_tag, per_change) %>%
+  group_by(loc_tag) %>%
+  summarize(mean_per = mean(per_change)) %>%
+  #mutate(mean_per = -15) %>%
+  #reliable = case_when((mean_per > 10 | mean_per < -10) ~ FALSE),
+  mutate(reliable = case_when((mean_per <= 15 & mean_per >= -15) ~ TRUE)) %>%
+  drop_na(reliable) %>%
+  select(!c(reliable))
 ```
+
+```{r ab and loc check}
+sensor_info <- loc_data %>%
+  full_join(ab_comp)
+```
+
 
 
