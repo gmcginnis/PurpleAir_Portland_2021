@@ -11,7 +11,7 @@ library(tidyverse) #dplyr, etc
 library(lubridate) #better time/date manipulation
 ```
 
-```{r}
+```{r ab grab}
 #my_file_paths <- list.files(path="data/raw", pattern="SE",full.names=TRUE) #smaller subset
 all_paths <- list.files(path="data/raw", pattern="Real Time",full.names=TRUE)
 
@@ -38,22 +38,9 @@ my_files <- all_paths %>%
   select(!c(inout, primsec))
 ```
 
-```{r}
-my_file_paths <- list.files(path = "data/raw", pattern = "SE", full.names = TRUE)
+```{r pm25}
+my_file_paths <- list.files(path = "data/raw", pattern = "STAR", full.names = TRUE)
 #my_file_paths <- list.files(path = "data/raw", pattern = "Primary Real Time", full.names=TRUE)
-
-raw_data <- my_file_paths %>%
-  set_names() %>%
-  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
-                                         created_at = col_character(),
-                                         .default = col_double())), .id="source") %>%
-  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
-
-#dat_csv = ldply(my_file_paths, read_csv)
-raw_data_2 <- my_file_paths %>%
-  #lapply(read_csv, col_types = cols(.default = "c"))
-  map_df(~read_csv(.x, col_types = cols(.default = "c")))
-  #map_df(~read_csv(.x))
 
 raw_data <- my_file_paths %>%
   set_names()%>%
@@ -67,14 +54,103 @@ processed_data <- raw_data %>%
   select(source, created_at, `PM2.5_CF1_ug/m3`) %>%
   drop_na(`PM2.5_CF1_ug/m3`) %>%
   mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) %>% #removes filepath name
-  #mutate_at(vars(-created_at), as.double)
-  # mutate(`PM1.0_CF1_ug/m3` = as.double(`PM1.0_CF1_ug/m3`),
-  #        `PM2.5_CF1_ug/m3` = as.double(`PM2.5_CF1_ug/m3`),
-  #        )
-  mutate()
-
-#lapply(my_file_paths, read_csv)
+  mutate(loc_tag = str_extract(source, "^[^\\(]+"),
+         #loc_tag_new = str_replace(loc_tag, " B ", ""),
+         #inoutun = str_extract(source, "(outside|inside|undefined)"),
+         inout = str_extract(source, "(outside|inside)"),
+         ab = str_extract(source, " B \\("),
+         primsec = str_extract(source, "\\) (Primary|Secondary)")) %>%
+  mutate(loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side="right"),
+         primsec = str_extract(primsec, "(Primary|Secondary)"),
+         ab = str_extract(ab, "B"),
+         ab = replace_na(ab, "A")) %>%
+  group_by(loc_tag) %>%
+  #select(loc_tag_new, inout, ab) %>%
+  fill(inout) %>%
+  filter(inout == "outside",
+         primsec == "Primary") %>%
+  select(!c(inout, primsec)) %>%
+  mutate(created_at = as_datetime(created_at), #converting from character to date time format; tz is in UTC
+         date = date(created_at), #picking out just the date
+         #time = strftime(created_at, format="%H:%M:%S"), # old way of picking time; outputs char
+         time = hms::as_hms(created_at), #picking out just the time
+         hour = hour(created_at),
+         #hour_round = hour(round_date(created_at, unit="hour")),
+         day = day(created_at),
+         month = month(created_at, label = TRUE)) %>%
+  mutate(coords = str_extract(source, "([0-9])\\w+\\.([0-9])\\w+\\s\\-([0-9])\\w+\\.([0-9])\\w+"), #grabbing coord data
+         lat = str_extract(coords, "\\d+\\.\\d+\\s"), #latitude (north)
+         lat = str_trim(lat, side = "right"), #removing extra whitespace
+         lat = as.numeric(lat), #converting to numeric from character
+         long = str_extract(coords, "\\-\\d+\\.\\d+"), #longitude (negative here, so west)
+         long = as.numeric(long)) #converting to numeric from character
 ```
 
+```{r data import}
+#file_paths_all <- list.files(path = "data/raw", pattern = "Primary Real Time", full.names=TRUE)
+file_paths_all <- list.files(path = "data/raw", pattern = "SE ", full.names=TRUE)
+#file_paths_a <- list.files(path = "data/raw", pattern = "(outside|inside).+(Primary)", full.names=TRUE)
+#file_paths_b <- list.files(path = "data/raw", pattern = "(undefined).+(Primary)", full.names=TRUE)
+
+all_raw <- file_paths_all %>%
+  set_names()%>%
+  map_df(~read_csv(.x, col_types = cols(#source = col_character(),
+                                        created_at = col_character(),
+                                        X11 = col_character(),
+                                        .default = "d")), .id="source")
+
+all_raw <- all_raw %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
+```
+
+
+```{r location reference table}
+loc_data <- all_raw %>%
+  distinct(source) %>%
+  #mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) %>% #removes filepath name
+  mutate(loc_tag = str_extract(source, "^[^\\(]+"),
+         loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side="right")) %>%
+         #loc_tag_new = str_replace(loc_tag, " B ", ""),
+         #inoutun = str_extract(source, "(outside|inside|undefined)"),
+  mutate(inout = str_extract(source, "(outside|inside)")) %>%
+  group_by(loc_tag) %>%
+  #select(loc_tag_new, inout, ab) %>%
+  fill(inout) %>%
+  mutate(coords = str_extract(source, "([0-9])\\w+\\.([0-9])\\w+\\s\\-([0-9])\\w+\\.([0-9])\\w+"), #grabbing coord data
+         lat = str_extract(coords, "\\d+\\.\\d+\\s"), #latitude (north)
+         lat = str_trim(lat, side = "right"), #removing extra whitespace
+         lat = as.numeric(lat), #converting to numeric from character
+         long = str_extract(coords, "\\-\\d+\\.\\d+"), #longitude (negative here, so west)
+         long = as.numeric(long)) %>%
+  select(!c(source, coords)) %>%
+  distinct(loc_tag, .keep_all=TRUE)
+```
+
+```{r ab check}
+var_of_interest <- "PM2.5_ATM_ug/m3"
+
+ab_comp <- all_raw %>%
+  select(source, created_at, var_of_interest) %>%
+  drop_na(var_of_interest) %>%
+  mutate(loc_tag = str_extract(source, "^[^\\(]+"),
+         loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side="right"),
+         ab = str_extract(source, " B \\("),
+         ab = str_extract(ab, "B"),
+         ab = replace_na(ab, "A")) %>%
+  select(!c(source)) %>%
+  mutate(created_at = as_datetime(created_at), #converting from character to date time format; tz is in UTC
+         date = date(created_at), #picking out just the date
+         time = hms::as_hms(created_at)) %>% #picking out just the time
+    mutate(hour = hour(created_at),
+           min = minute(created_at),
+         #hour_round = hour(round_date(created_at, unit="hour")),
+         month = month(created_at, label=TRUE),
+         day = day(created_at)) %>%
+  group_by(loc_tag, ab, date, hour, min) %>%
+  summarize(mean = mean(`PM2.5_ATM_ug/m3`)) #var_of_interest
+```
 
 
