@@ -15,18 +15,26 @@ library(ggthemes) #better themes
 ```
 
 ```{r loading dfs}
-wrangled_data <- read_csv(path - "data/wrangled_new/wrangled_data.csv")
+wrangled_hourly <- read_csv(path - "data/wrangled_new/wrangled_hour.csv")
+wrangled_daily <-  read_csv(path - "data/wrangled_new/wrangled_day.csv")
+
+var_names <- names(wrangled_hourly)
+```
+
+```{r STAR}
+star_hourly <- wrangled_hourly %>%
+  filter(str_detect(loc_tag, "STAR"))
 ```
 
 
-```{r hourly viz}
-hourly_viz_pm25 <- ggplot(hourly_df, aes(x=date, y=mean_pm25, color=loc_tag))+
-  #geom_line(alpha=0.7)+
-  geom_point(alpha=0.7,shape=4)+
+
+```{r star hourly}
+star_hourly <- ggplot(star_hourly, aes(x=date, y=`PM2.5_ATM_ug/m3`, color=loc_tag))+
+  facet_grid(inout~ab)+
+  geom_line(alpha=0.7)+
+  #geom_point(alpha=0.7,shape=4)+
   theme(legend.position="none")+
   labs(title="Raw PM2.5, averaged hourly, colored by sensor")
-
-hourly_viz_pm25
 ```
 
 
