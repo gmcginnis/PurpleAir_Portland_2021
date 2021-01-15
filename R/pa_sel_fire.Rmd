@@ -30,19 +30,35 @@ sel_wrangled <- sel_raw %>%
   mutate(created_at = as_datetime(created_at, tz = "UTC"), #converting from character to date time format; tz is in UTC
          date = date(created_at), #picking out just the date
          #time = strftime(created_at, format="%H:%M:%S"), # old way of picking time; outputs char
-         time = hms::as_hms(created_at), #picking out just the time
-         time_est = time) %>% #currently working on rounding out the seconds but for now it stands as is
+         time = hms::as_hms(created_at)) %>% #picking out just the time
   mutate(loc_tag = str_extract(source, "^[^\\(]+"), #grabbing location tag
+         loc_tag = str_replace(loc_tag, " B ", ""),
          loc_tag = str_trim(loc_tag, side = "right")) %>% #removing extra whitespace
   mutate(hour = hour(created_at),
-         hour_round = hour(round_date(created_at, unit="hour")),
-         year = year(created_at),
+         #hour_round = hour(round_date(created_at, unit="hour")),
+         min = minute(created_at),
+         #year = year(created_at),
          month = month(created_at, label=TRUE),
          day = day(created_at)) %>%
   mutate(sensor = case_when(
-    str_detect(loc_tag, " B") ~ "B"
+    str_detect(source, " B \\(") ~ "B"
   )) %>%
   mutate(sensor = replace_na(sensor, "A")) %>%
+  mutate(coords = str_extract(source, "([0-9])\\w+\\.([0-9])\\w+\\s\\-([0-9])\\w+\\.([0-9])\\w+"), #grabbing coord data
+         lat = str_extract(coords, "\\d+\\.\\d+\\s"), #latitude (north)
+         lat = str_trim(lat, side = "right"), #removing extra whitespace
+         lat = as.numeric(lat), #converting to numeric from character
+         long = str_extract(coords, "\\-\\d+\\.\\d+"), #longitude (negative here, so west)
+         long = as.numeric(long)) %>%
+  mutate(inout = str_extract(source, "(outside|inside)")) %>%
+  group_by(loc_tag) %>%
+  fill(inout) %>%
+  select(c(source, sensor, inout, loc_tag, long, lat, created_at, date, time, month, day, hour, min, everything())) %>%
+  select(!c(X11, coords))
+
+write.csv(sel_wrangled, "data/sel_subset/sel_wrangled.csv", row.names=TRUE)
+
+sel_mini <- sel_wrangled %>%
   select(created_at, `PM2.5_ATM_ug/m3`, sensor) %>%
   rename(date_time = created_at,
          pm25 = `PM2.5_ATM_ug/m3`) %>%
