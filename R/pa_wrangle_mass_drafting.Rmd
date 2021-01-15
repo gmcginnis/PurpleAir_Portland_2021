@@ -30,6 +30,149 @@ raw_data <- my_file_paths %>%
 ```
 
 
+```{r again}
+#do not run this often. large dataframes!
+my_file_paths <- list.files(path = "data/raw", pattern = ") Primary Real Time", full.names = TRUE)
+
+#my_file_paths <- list.files(path="data/raw", pattern=".+(E )",full.names=TRUE) #smaller subset
+#my_file_paths <- list.files(path="data/raw", pattern="SE",full.names=TRUE) #smaller subset
+#my_file_paths <- list.files(path="data/raw", pattern="(STAR).+Primary",full.names=TRUE)
+
+#pray that R doesn't crash when you run this
+raw_data <- my_file_paths %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         UptimeMinutes = col_skip(),
+                                         X11 = col_skip(),
+                                         .default = col_double())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
+```
+
+```{r}
+reading <- function(filepath){
+  temp_data <- filepath %>%
+    set_names() %>%
+    read_csv(col_types = cols(created_at = col_character(),
+                                         `PM2.5_ATM_ug/m3` = col_double(),
+                                         .default = col_skip())) %>%
+    mutate(source = filepath,
+           source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
+}
+
+path <- list.files(path="data/raw",pattern="SE ",full.names=TRUE)
+
+reading(path)
+
+all_csv <- lapply(path,read_csv())
+
+#Set the name of each list element to its
+# respective file name. Note full.names = FALSE to
+# get only the file names, not the full path.
+names(all_csv) <- gsub(".csv","",
+                       list.files("path/to/files",full.names = FALSE),
+                       fixed = TRUE)
+```
+
+
+
+```{r file paths}
+all_paths <- list.files(path="data/raw", pattern="SE ",full.names=TRUE)
+# *.csv
+# Primary Real Time
+
+raw_data <- all_paths %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         .default = col_double())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
+
+processing <- function(file_path){
+  
+}
+```
+
+```{r}
+## Create a list of the files
+all_paths <- list.files(path="data/raw", pattern="SE ",full.names=TRUE)
+
+## Pre-allocate a list to store all of the results of reading
+## so that we aren't re-copying the list for each iteration
+DTList <- vector(mode = "list", length = length(FileList))
+
+## Read in all the files, excluding the first two columns
+# for(i %in% seq_along(DTList)) {
+#   DTList[[i]] <- data.table::fread(all_paths[[i]], drop = c(1,2))
+# }
+
+## Combine the results into a single data.table
+DT <- data.table::rbindlist(DTList)
+
+## Optionally, convert the data.table to a data.frame to match requested result
+## Though I would recommend looking into using data.table instead!
+data.table::setDF(DT)
+
+
+# my_data <- lapply(all_paths, 
+#                   read.csv, 
+#                   header=TRUE,
+#                   sep="\t")
+
+all_paths <- list.files(path="data/raw", pattern=") Primary Real Time",full.names=TRUE)
+
+
+my_file_paths <- list.files(path="data/raw", pattern="(STAR).+Primary",full.names=TRUE)
+
+# raw_data <- all_paths %>%
+#   set_names() %>%
+#   map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+#                                          created_at = col_character(),
+#                                          `PM2.5_ATM_ug/m3` = col_double(),
+#                                          .default = col_skip())),
+#           .id="source") %>%
+#   mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
+
+
+raw_data <- my_file_paths %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         `PM2.5_ATM_ug/m3` = col_double(),
+                                         .default = col_skip())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
+
+
+# filenames <- list.files(path="data/raw", pattern="SE ",full.names=TRUE)
+# 
+# ##Create list of data frame names without the ".csv" part 
+# #names <- substr(filenames,1,7)
+# names <- str_replace(filenames, ".\\w+\\/\\w+\\/", "")
+# 
+# ###Load all files
+# for(i in names){
+#     filepath <- file.path("data/raw",paste(i,".csv",sep=""))
+#     assign(i, read.delim(filepath,
+#     colClasses=c("character","factor",rep("numeric",4)),
+#     sep = "\t"))
+# }
+# 
+myfiles <- list.files(pattern = ".csv") # create a list of all csv files in the directory
+data_csv <- map_dfr(all_paths,
+                    #~data.table::fread(.x, drop = c(3:10,12:23), colClasses=c(created_at="character"))) %>%
+                    ~data.table::fread(.x,
+                                       colClasses=c(source="character",
+                                                    created_at="character",
+                                                    .default=NULL))) %>%
+  as.data.frame()
+
+
+
+```
+
+
+
+
 ```{r tidying}
 
 df <- raw_data %>%

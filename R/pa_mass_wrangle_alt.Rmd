@@ -1,0 +1,199 @@
+---
+title: "pa_mass_wrangle_alt"
+author: "Gillian McGinnis"
+date: "1/14/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+
+#library(data.table)
+```
+
+```{r}
+my_file_paths <- list.files(path="data/raw",pattern="Primary Real Time",full.names=TRUE)
+
+files_a <- my_file_paths[1:50]
+files_b <- my_file_paths[51:100]
+files_c <- my_file_paths[101:150]
+files_d <- my_file_paths[151:200]
+files_e <- my_file_paths[201:256]
+
+raw_a <- files_a %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         #`PM2.5_ATM_ug/m3` = col_double(),
+                                         entry_id = col_skip(),
+                                         UptimeMinutes = col_skip(),
+                                         X11 = col_skip(),
+                                         .default = col_double())), .id="source") %>%
+                                         #.default = col_skip())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) #removes filepath name
+
+
+raw_b <- files_b %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         entry_id = col_skip(),
+                                         UptimeMinutes = col_skip(),
+                                         X11 = col_skip(),
+                                         .default = col_double())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", ""))
+
+
+raw_c <- files_c %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         entry_id = col_skip(),
+                                         UptimeMinutes = col_skip(),
+                                         X11 = col_skip(),
+                                         .default = col_double())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", ""))
+
+raw_d <- files_d %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         entry_id = col_skip(),
+                                         UptimeMinutes = col_skip(),
+                                         X11 = col_skip(),
+                                         .default = col_double())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", ""))
+
+raw_e <- files_e %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         entry_id = col_skip(),
+                                         UptimeMinutes = col_skip(),
+                                         X11 = col_skip(),
+                                         .default = col_double())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", ""))
+```
+
+```{r megre}
+
+
+data <- raw_a %>%
+  full_join(raw_b) %>%
+  full_join(raw_c) %>%
+  full_join(raw_d) %>%
+  full_join(raw_e)
+
+#remove(raw_a, raw_b, raw_c, raw_d, raw_e)
+```
+
+```{r processing}
+wrangled_data <- data %>%
+  mutate(created_at = as_datetime(created_at), #converting from character to date time format; tz is in UTC
+         date = date(created_at), #picking out just the date
+         #time = strftime(created_at, format="%H:%M:%S"), # old way of picking time; outputs char
+         #time_est = time, %>% #currently working on rounding out the seconds but for now it stands as is
+         time = hms::as_hms(created_at)) %>% #picking out just the time
+  mutate(coords = str_extract(source, "([0-9])\\w+\\.([0-9])\\w+\\s\\-([0-9])\\w+\\.([0-9])\\w+"), #grabbing coord data
+         lat = str_extract(coords, "\\d+\\.\\d+\\s"), #latitude (north)
+         lat = str_trim(lat, side = "right"), #removing extra whitespace
+         lat = as.numeric(lat), #converting to numeric from character
+         long = str_extract(coords, "\\-\\d+\\.\\d+"), #longitude (negative here, so west)
+         long = as.numeric(long)) %>% #converting to numeric from character
+  mutate(loc_tag = str_extract(source, "^[^\\(]+"), #grabbing location tag
+         loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side="right"), #removing extra whitespace
+         ab = str_extract(source, " B \\("),
+         ab = str_extract(ab, "B"),
+         ab = replace_na(ab, "A")) %>%
+  mutate(month = month(created_at, label=TRUE),
+         day = day(created_at),
+         hour = hour(created_at),
+         min = minute(created_at)) %>%
+  mutate(inout = str_extract(source, "(outside|inside)")) %>%
+  group_by(loc_tag) %>%
+  #select(loc_tag_new, inout, ab) %>%
+  fill(inout) %>%
+  select(!c(coords, source)) %>%
+  select(c(loc_tag, created_at, inout, ab, long, lat, date, time, month, day, hour, min, everything()))
+
+```
+
+
+```{r loc data}
+
+loc_data <- data %>%
+  distinct(source) %>%
+  #mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) %>% #removes filepath name
+  mutate(loc_tag = str_extract(source, "^[^\\(]+"),
+         loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side="right")) %>%
+         #loc_tag_new = str_replace(loc_tag, " B ", ""),
+         #inoutun = str_extract(source, "(outside|inside|undefined)"),
+  mutate(inout = str_extract(source, "(outside|inside)")) %>%
+  group_by(loc_tag) %>%
+  #select(loc_tag_new, inout, ab) %>%
+  fill(inout) %>%
+  mutate(coords = str_extract(source, "([0-9])\\w+\\.([0-9])\\w+\\s\\-([0-9])\\w+\\.([0-9])\\w+"), #grabbing coord data
+         lat = str_extract(coords, "\\d+\\.\\d+\\s"), #latitude (north)
+         lat = str_trim(lat, side = "right"), #removing extra whitespace
+         lat = as.numeric(lat), #converting to numeric from character
+         long = str_extract(coords, "\\-\\d+\\.\\d+"), #longitude (negative here, so west)
+         long = as.numeric(long)) %>%
+  select(!c(source, coords)) %>%
+  distinct(loc_tag, .keep_all=TRUE)
+  
+```
+
+```{r ab comp}
+#var_of_interest <- "PM2.5_ATM_ug/m3"
+ab_comp <- data %>%
+  select(source, created_at, `PM2.5_ATM_ug/m3`) %>% #var of interest
+  drop_na(`PM2.5_ATM_ug/m3`) %>% #var of interest
+  mutate(loc_tag = str_extract(source, "^[^\\(]+"),
+         loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side="right"),
+         ab = str_extract(source, " B \\("),
+         ab = str_extract(ab, "B"),
+         ab = replace_na(ab, "A")) %>%
+  select(!c(source)) %>%
+  mutate(created_at = as_datetime(created_at), #converting from character to date time format; tz is in UTC
+         date = date(created_at), #picking out just the date
+         time = hms::as_hms(created_at)) %>% #picking out just the time
+    mutate(hour = hour(created_at),
+           min = minute(created_at),
+         month = month(created_at, label=TRUE),
+         day = day(created_at)) %>%
+  group_by(loc_tag, ab, date, hour, min) %>%
+  summarize(mean_pm25 = mean(`PM2.5_ATM_ug/m3`)) %>% #var_of_interest
+  ungroup() %>%
+  pivot_wider(names_from = ab, values_from=mean_pm25) %>%
+  mutate(per_change = ((A-B)/A)*100) %>%
+  select(loc_tag, per_change) %>%
+  mutate(per_change_check = case_when((per_change < 100 & per_change > -100) ~ per_change)) %>%
+  drop_na(per_change_check) %>%
+  select(loc_tag, per_change) %>%
+  #drop_na(per_change) %>%
+  group_by(loc_tag) %>%
+  summarize(mean_per = mean(per_change))
+
+# ab_comp_filtered <- ab_comp %>%
+#   mutate(reliable = case_when((mean_per <= 15 & mean_per >= -15) ~ TRUE)) %>%
+#   drop_na(reliable) %>%
+#   select(!c(reliable))
+```
+
+```{r ab and loc}
+sensor_info <- loc_data %>%
+  full_join(ab_comp)
+
+#write.csv(sensor_info, "data/wrangled_new/sensor_info.csv", row.names=TRUE)
+```
+
+```{r saving data}
+write.csv(wrangled_data, "data/wrangled_new/wrangled_data.csv", row.names=TRUE)
+
+write.csv(loc_data, "data/wrangled_new/loc_data.csv", row.names=TRUE)
+```

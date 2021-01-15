@@ -15,6 +15,7 @@ library(ggthemes) #better themes
 ```
 
 ```{r loading dfs}
+wrangled_data <- read_csv(path - "data/wrangled_new/wrangled_data.csv")
 ```
 
 
