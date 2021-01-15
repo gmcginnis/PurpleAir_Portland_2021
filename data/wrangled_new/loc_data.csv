@@ -1,0 +1,125 @@
+"","loc_tag","inout","lat","long"
+"1","1907 ZE Home","inside",45.497901,-122.609954
+"2","20TH & POWELL","inside",45.498826,-122.645673
+"3","27th-Stanton","inside",45.543336,-122.63826
+"4","36th & SE Woodward","outside",45.501722,-122.626231
+"5","3SG","outside",45.421562,-122.629802
+"6","3SG-Indoors","inside",45.422556,-122.630188
+"7","51st and Lincoln","outside",45.508049,-122.610046
+"8","53rd Drive","outside",45.542799,-122.747395
+"9","97210","outside",45.531872,-122.701722
+"10","Arnada Neighborhood","outside",45.638341,-122.66739
+"11","Benchview Terrace","outside",45.420348,-122.817491
+"12","Benson 1","outside",45.527843,-122.651076
+"13","BHP","outside",45.470191,-122.816411
+"14","BM HQ","inside",45.510738,-122.606803
+"15","Bonny Slope","outside",45.538933,-122.794502
+"16","Bridge Ave","outside",45.58495,-122.771224
+"17","Bridlemile","outside",45.493717,-122.716816
+"18","Bull Mountain Home","outside",45.416546,-122.81784
+"19","Burlingame","inside",45.468113,-122.688392
+"20","byuki project","outside",45.492607,-122.640135
+"21","Carpenter Fam","outside",45.574679,-122.698169
+"22","Carpenter House","outside",45.530026,-122.708562
+"23","Chase and Angie","inside",45.540926,-122.804535
+"24","ChiliWeeds","inside",45.468944,-122.642298
+"25","Clear Hills","outside",45.481501,-122.754719
+"26","Colby","inside",45.469511,-122.655773
+"27","Concordia","outside",45.565768,-122.628012
+"28","Council Crest","outside",45.500182,-122.70926
+"29","Delta Court","outside",45.51913,-122.848597
+"30","Division Street","outside",45.503971,-122.633575
+"31","East Eliot","outside",45.539994,-122.66046
+"32","Eastmoreland","outside",45.477236,-122.624219
+"33","Edgewood Outside","outside",45.504303,-122.699369
+"34","Eliot Tower","outside",45.516197,-122.684528
+"35","Elm","inside",45.482724,-122.779312
+"36","Forest Hills","inside",45.412514,-122.720145
+"37","G&M_Inside","inside",45.499526,-122.633284
+"38","GH Tillamook Row","outside",45.537619,-122.666534
+"39","GH Tillamook Row 48a","inside",45.538029,-122.665566
+"40","Gnomish Air","inside",45.492349,-122.653037
+"41","Gnomish Garden","outside",45.492343,-122.652897
+"42","Hall House","inside",45.486788,-122.701568
+"43","Healy Heights","outside",45.488128,-122.696269
+"44","Hewett Blvd 1","outside",45.502528,-122.732218
+"45","Home","inside",45.559475,-122.853683
+"46","Infused Outside","outside",45.42434,-122.69289
+"47","Inside","inside",45.499526,-122.633235
+"48","Irvington NE 12th & Tillamook","outside",45.537247,-122.653209
+"49","Jan's Air","outside",45.576301,-122.666872
+"50","Joy Fortress","inside",45.532922,-122.610612
+"51","Ku'Ale Heights Milwaukie, OR","outside",45.43199,-122.637432
+"52","LairHill","outside",45.495091,-122.686669
+"53","Lake Road","outside",45.431451,-122.625914
+"54","Langworthy Terrace 878ft","outside",45.549681,-122.78065
+"55","Lewis & Clark College","outside",45.451916,-122.672578
+"56","Lighthouse","outside",45.565396,-122.669462
+"57","LO FH indoor","inside",45.429107,-122.675891
+"58","Marion Court Apartments","outside",45.511866,-122.630167
+"59","Master bedroom","inside",45.51024,-122.607447
+"60","McAirBeaverton","outside",45.445584,-122.832965
+"61","Miller","outside",45.52269,-122.758338
+"62","Milwaukie","inside",45.431532,-122.625979
+"63","Mirabella","outside",45.497698,-122.670155
+"64","Mirabella 18th fl","inside",45.49765,-122.670222
+"65","Moda Center","outside",45.531551,-122.667764
+"66","Moonshadow","outside",45.458901,-122.745707
+"67","Mt Tabor Air Quality","outside",45.516158,-122.599202
+"68","Mt. Tabor Indoor","inside",45.516526,-122.609894
+"69","Mushroom Kingdom Outdoor","outside",45.514852,-122.601935
+"70","NCA-24th-Raleigh-Inside","inside",45.534039,-122.700871
+"71","NCA-24th-Raleigh-Outside","outside",45.534041,-122.700756
+"72","NCA-Indigo9thfloor","outside",45.52267,-122.683945
+"73","NE 17th & Thompson","inside",45.539833,-122.648664
+"74","NE Glisan","outside",45.526422,-122.624812
+"75","NE Regents Drive","outside",45.550931,-122.633913
+"76","Non weld Shop","inside",45.558607,-122.707794
+"77","North Portland","outside",45.597862,-122.732135
+"78","NSA OPS","outside",45.524633,-122.712385
+"79","NW PDX","outside",45.53439,-122.702514
+"80","NW Tigard","outside",45.442899,-122.806993
+"81","Ogden84th","outside",45.643336,-122.5875
+"82","pdx bird farm","outside",45.530521,-122.592163
+"83","Pipe shop","inside",45.559024,-122.708039
+"84","Portland Heights","outside",45.510168,-122.696566
+"85","PPR WASHINGTON PARK SOUTH","outside",45.510189,-122.717089
+"86","PSU STAR Lab Edgewater","inside",45.58213,-122.7466
+"87","PSU STAR Lab Lost Park","outside",45.537951,-122.790497
+"88","PSU STAR Lab Rose City Park","outside",45.544078,-122.59632
+"89","PSU STAR LAB SEL","outside",45.496787,-122.602895
+"90","PSU_GBRL_Hillsdale_in","inside",45.480307,-122.705013
+"91","PSU_GBRL_Home","outside",45.498354,-122.651923
+"92","Purple Palace","outside",45.537961,-122.721165
+"93","Red Fox Hills","outside",45.43058,-122.677515
+"94","Red Onion","inside",45.582939,-122.711298
+"95","Richmond Indoors","inside",45.505612,-122.625416
+"96","Rose Villa","inside",45.423687,-122.64692
+"97","Royal Woodlands","outside",45.475607,-122.77265
+"98","SCROBBLE","inside",45.570495,-122.63919
+"99","SCROBBLED","outside",45.57048,-122.640242
+"100","SE 24th and Sherman St.","outside",45.506298,-122.642584
+"101","SE 47th and Lincoln","inside",45.508512,-122.614102
+"102","SE Harrison St","outside",45.508616,-122.61856
+"103","SEMalden57Ave","outside",45.468014,-122.605537
+"104","SharkTank","inside",45.539511,-122.618092
+"105","SM shop","inside",45.557558,-122.706437
+"106","South Burlingame","outside",45.465912,-122.691352
+"107","South Tabor","outside",45.504625,-122.595016
+"108","South Woodstock","outside",45.463064,-122.624699
+"109","STAR LAB BETHANY","outside",45.535187,-122.84196
+"110","STAR Lab Creston Kenilworth","outside",45.495123,-122.63858
+"111","STAR Lab Homestead Neighborhood","outside",45.500185,-122.692895
+"112","Sunset Lab 1","outside",45.446804,-122.787652
+"113","SW Palatine Street","outside",45.444115,-122.721797
+"114","Tillamook Row 2","inside",45.537641,-122.665801
+"115","Tudor Lane","outside",45.537471,-122.785847
+"116","Upper Multnomah Inside","inside",45.474068,-122.704981
+"117","Upper Multnomah Village","outside",45.474005,-122.70476
+"118","Vancouver Heights-Northgate","outside",45.620108,-122.579401
+"119","Vernon","inside",45.563178,-122.644729
+"120","Vernon Neighborhood","outside",45.564496,-122.646955
+"121","Vista","outside",45.533042,-122.682259
+"122","Water Tower","outside",45.452957,-122.621551
+"123","Woods Park","outside",45.455392,-122.720988
+"124","Yeon 15","inside",45.519667,-122.676949
