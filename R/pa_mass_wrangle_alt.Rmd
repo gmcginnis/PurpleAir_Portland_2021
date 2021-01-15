@@ -13,7 +13,7 @@ library(lubridate)
 #library(data.table)
 ```
 
-```{r}
+```{r csv import}
 my_file_paths <- list.files(path="data/raw",pattern="Primary Real Time",full.names=TRUE)
 
 files_a <- my_file_paths[1:50]
@@ -77,8 +77,35 @@ raw_e <- files_e %>%
   mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", ""))
 ```
 
-```{r megre}
+```{r, eval=FALSE}
 
+set_test <- NULL
+
+reading <- function(fileset){
+  set_test <<- fileset %>%
+    set_names() %>%
+    map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         entry_id = col_skip(),
+                                         UptimeMinutes = col_skip(),
+                                         X11 = col_skip(),
+                                         .default = col_double())), .id="source") %>%
+    mutate(source = str_replace(source, ".\\w+\\/\\w+\\/", "")) %>% #removes filepath name
+    rbind(set_test)
+  
+  #return(set_test)
+}
+
+# files_mini <- my_file_paths[1:2]
+# files_mini_2 <- my_file_paths[5:7]
+# 
+# reading(files_mini)
+# reading(files_mini_2)
+
+```
+
+
+```{r megre}
 
 data <- raw_a %>%
   full_join(raw_b) %>%
@@ -121,8 +148,14 @@ wrangled_data <- data %>%
 
 ```
 
+```{r loc data short}
+loc_data_mini <- wrangled_data %>%
+  select(loc_tag, inout, long, lat) %>%
+  distinct(loc_tag, .keep_all = TRUE)
+```
 
-```{r loc data}
+
+```{r loc data, eval=FALSE}
 
 loc_data <- data %>%
   distinct(source) %>%
@@ -185,10 +218,10 @@ ab_comp <- data %>%
 #   select(!c(reliable))
 ```
 
+
 ```{r ab and loc}
 sensor_info <- loc_data %>%
   full_join(ab_comp)
-
 #write.csv(sensor_info, "data/wrangled_new/sensor_info.csv", row.names=TRUE)
 ```
 
@@ -196,4 +229,88 @@ sensor_info <- loc_data %>%
 write.csv(wrangled_data, "data/wrangled_new/wrangled_data.csv", row.names=TRUE)
 
 write.csv(loc_data, "data/wrangled_new/loc_data.csv", row.names=TRUE)
+```
+
+
+
+```{r ab comp 2, eval = FALSE}
+data_subset <- wrangled_data %>%
+  filter(str_detect(loc_tag, "STAR"))
+
+vars <- names(data_subset)[13:22]
+a_vars <- paste(names(data_subset)[13:22],"_A",sep="")
+b_vars <- paste(names(data_subset)[13:22],"_B",sep="")
+delta_vars <- paste(names(data_subset)[13:22],"_delta",sep="")
+mean_vars <- paste(names(data_subset)[13:22],"_mean",sep="")
+
+
+ab_subset_test <- data_subset %>%
+  #group_by(loc_tag, inout, ab, date, hour, min) %>%
+  group_by(loc_tag, inout, ab, date, hour) %>%
+  summarise_at(all_of(vars), mean) %>%
+  #group_by(loc_tag, inout, ab, date, hour) %>%
+  #summarise_at(all_of(vars), )
+  #summarize(mean()) %>%
+  pivot_wider(names_from=ab, values_from=all_of(vars)) %>%
+  group_by(loc_tag, inout, date, hour)
+  #mutate_at(vars(matches(vars)), diff)
+  #summarize_at(all_of(a_vars), delta)
+
+# del <- function(var) {
+#   
+# }
+
+library(quantmod)
+
+ab_subset_quantmod <- data_subset %>%
+  group_by(loc_tag, inout, ab, date, hour) %>%
+  summarize_at(all_of(vars), mean) %>%
+  group_by(loc_tag, inout, date, hour) %>%
+  summarize_at(all_of(vars), Delt)
+
+ab_mini <- ab_subset_quantmod %>%
+  #summarize_at(all_of(vars), na.rm=TRUE)
+  group_by(loc_tag, inout) %>%
+  summarize_at(all_of(vars), mean, na.rm = TRUE)
+
+ab_subset_4 <- data_subset %>%
+  group_by(loc_tag, inout, ab, date, hour) %>%
+  #summarise_at(all_of(vars), list(mean=mean, diff=diff)) %>%
+  summarise_at(all_of(vars), mean) %>%
+  group_by(loc_tag, inout, date, hour)%>%
+  summarise_at(all_of(vars), list(mean=mean, diff=diff))
+  # group_by(loc_tag, inout, ab, date, hour) %>%
+  # summarise_at(all_of(vars), list(mean=mean, diff=diff))
+
+# ab_subset_2 <- ab_subset_test %>%
+#   group_by(loc_tag, inout, date, hour) %>%
+#   summarise_at(all_of(vars), mean) %>%
+#   mutate_at(a_vars, a_vars-b_vars) %>%
+#   mutate(delta_vars = a_vars-b_vars)
+
+#pct <- function(x){x / lag(x) - 1}
+#pct <- function(x){}
+#df_vertical_growth %>% group_by(YEAR, VERTICAL) %>% mutate_at(funs=pct,Profit)
+#FUN=function(x) c(NA,diff(x)))
+# delta <- function(input){
+#   ((paste(input,"_A") - paste(input,"_B",sep="")) / (paste(input,"_A"))*100)
+# }
+# 
+# delta_ab <- function(input){
+#   a <- . %>% filter(ab=="A") %>% select(input)
+#   b <- . %>% filter(ab=="B") %>% select(input)
+#   #b <- $input %>% filter(ab=="B")
+#   ((a-b)/a)*100
+# }
+
+ab_subset_3 <- data_subset %>%
+  group_by(loc_tag, inout, ab, date, hour) %>%
+  #summarize_at(all_of(vars), delta_ab)
+  summarize_at(all_of(vars), mean) %>%
+  mutate(difference = )
+  group_by(loc_tag, inout, date, hour) %>%
+  summarize_at(all_of(vars), diff)
+  #summarize_at(all_of(vars), diff)
+  #summarize_at(all_of(vars), .funs=sum) %>%
+  #mutate(delta = ave(all_of(vars), factor(df$ab), FUN=function(x) c(NA,diff(x))))
 ```
