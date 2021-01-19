@@ -185,7 +185,7 @@ ggplot(sel_25, aes(x=date_time, y=pm25, color=cf_sensor))+
 comp_25 <- full_join(deq_wrangled, sel_25) %>%
   mutate(cf_sensor = replace_na(cf_sensor, "DEQ"))
 
-ggplot(comp_25, aes(x=date_time, y=pm25, color=cf_sensor))+
+sel_comp <- ggplot(comp_25, aes(x=date_time, y=pm25, color=cf_sensor))+
 #ggplot(comp_25, aes(x=date_time, y=pm25, color=sensor,linetype=cf))+
   #facet_wrap(~type)+
   geom_line(alpha=0.7)+
@@ -195,7 +195,9 @@ ggplot(comp_25, aes(x=date_time, y=pm25, color=cf_sensor))+
   theme_igray()+
   scale_color_brewer(palette="Set1")+
   theme(legend.position="bottom")+
-  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="CF&Sensor:")
+  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="CF&Sensor:", title="Comparing PM2.5 values for DEQ vs. PA sensors\nduring September 2020 fires")
+
+ggsave("lafayette_pa_deq_pm25.png",plot=sel_comp, path="figures/")
 ```
 
 
