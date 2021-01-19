@@ -182,18 +182,20 @@ ggplot(sel_25, aes(x=date_time, y=pm25, color=cf_sensor))+
 ```
 
 ```{r all}
-comp_25 <- full_join(deq_wrangled, sel_25)
+comp_25 <- full_join(deq_wrangled, sel_25) %>%
+  mutate(cf_sensor = replace_na(cf_sensor, "DEQ"))
 
-ggplot(comp_25, aes(x=date_time, y=pm25, color=sensor,linetype=cf))+
+ggplot(comp_25, aes(x=date_time, y=pm25, color=cf_sensor))+
+#ggplot(comp_25, aes(x=date_time, y=pm25, color=sensor,linetype=cf))+
   #facet_wrap(~type)+
   geom_line(alpha=0.7)+
   scale_x_datetime(date_breaks="1 day",date_labels="%d")+
   #scale_y_continuous(breaks=seq(0,550,50))+
   #theme_few()+
   theme_igray()+
-  scale_color_brewer(palette="Set2")+
+  scale_color_brewer(palette="Set1")+
   theme(legend.position="bottom")+
-  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="Sensor:")
+  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="CF&Sensor:")
 ```
 
 
