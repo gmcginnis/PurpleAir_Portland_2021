@@ -15,26 +15,39 @@ library(ggthemes) #better themes
 ```
 
 ```{r loading dfs}
-wrangled_hourly <- read_csv(path - "data/wrangled_new/wrangled_hour.csv")
-wrangled_daily <-  read_csv(path - "data/wrangled_new/wrangled_day.csv")
+wrangled_hourly <- read_csv(file = "data/wrangled_new/wrangled_hour.csv")
+wrangled_daily <-  read_csv(file = "data/wrangled_new/wrangled_day.csv")
 
 var_names <- names(wrangled_hourly)
 ```
 
 ```{r STAR}
 star_hourly <- wrangled_hourly %>%
+  filter(str_detect(loc_tag, "STAR")) %>%
+
+star_daily <- wrangled_daily %>%
   filter(str_detect(loc_tag, "STAR"))
 ```
 
 
-
 ```{r star hourly}
-star_hourly <- ggplot(star_hourly, aes(x=date, y=`PM2.5_ATM_ug/m3`, color=loc_tag))+
+ggplot(star_hourly, aes(x=date, y=`PM2.5_ATM_ug/m3`, color=loc_tag))+
   facet_grid(inout~ab)+
   geom_line(alpha=0.7)+
+  theme_few()+
   #geom_point(alpha=0.7,shape=4)+
-  theme(legend.position="none")+
-  labs(title="Raw PM2.5, averaged hourly, colored by sensor")
+  theme(legend.position="bottom")+
+  labs(title="STAR labs PM2.5, avg hourly, colored by sensor")
+```
+
+```{r star daily}
+ggplot(star_daily, aes(x=date, y=`PM2.5_ATM_ug/m3`, color=loc_tag))+
+  facet_grid(inout~ab)+
+  geom_line(alpha=0.7)+
+  theme_few()+
+  #geom_point(alpha=0.7,shape=4)+
+  theme(legend.position="bottom")+
+  labs(title="STAR labs PM2.5, avg daily, colored by sensor")
 ```
 
 
