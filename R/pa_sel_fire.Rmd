@@ -87,20 +87,30 @@ deq_wrangled <- deq_raw %>%
   clean_names() %>%
   rename(pm25 = pm2_5_ug_m3_l) %>%
   #mutate(date_time = strptime(.$date_time, "%H:%M %m/%d/%Y"))
-  mutate(date_time_adj = as_datetime(date_time, format="%H:%M %m/%d/%Y")) %>%
+  mutate(date_time_adj = as_datetime(date_time, format="%H:%M %m/%d/%Y", tz = "UTC")) %>% #data is actually in PST. I don't know why lubridate will incorrectly convert the time zones.
+  #mutate(date_time_utc = force_tz(date_time_adj, "UTC")) %>%
+  mutate(#date_time_with = with_tz(date_time_adj, "UTC"),
+         forced = force_tz(date_time_adj, "PST"),
+         utc = with_tz(forced, "UTC")) %>%
+         #manual = date_time_adj-hours(8)
+         #date_time_force = force_tz(date_time_adj, "UTC"),
+         #date_time_math = (date_time_adj - hours(8)),
+         #adj = with_tz(forced, "UTC"))
+  select(!c(date_time)) %>%
 #as.Date(deq_wrangled$date_time, "%H:%M %m/%d/%Y")
 #strptime(deq_wrangled$date_time, "%H:%M %m/%d/%Y")
   #as.Date(df$Date, "%m/%d/%Y %H:%M:%S")
-  select(pm25, date_time_adj) %>%
-  rename(date_time = date_time_adj) %>%
+  #select(pm25, date_time_pst, date_time_utc) %>%
+  #rename(date_time = date_time_adj) %>%
+  rename(date_time = utc) %>%
   mutate(sensor = "DEQ",
          type = "DEQ") %>%
   drop_na()
 
-ggplot(deq_wrangled, aes(x=date_time, y=pm25))+
-  geom_path()+
-  #geom_point()+
-  scale_x_datetime(date_breaks="1 day",date_labels="%d")
+# ggplot(deq_wrangled, aes(x=date_time, y=pm25))+
+#   geom_path()+
+#   #geom_point()+
+#   scale_x_datetime(date_breaks="1 day",date_labels="%d")
 ```
 
 ```{r combining}
@@ -131,14 +141,54 @@ ggplot(deq_wrangled, aes(x=date_time, y=pm25))+
 # 
 # 
 # 
-# full_df <- full_join(deq_mini, sel_mini)
-full_df <- full_join(deq_wrangled, sel_wrangled)
+ #full_df <- full_join(deq_mini, sel_mini)
+#full_df <- full_join(deq_wrangled, sel_wrangled)
+full_df <- full_join(deq_wrangled, sel_mini)
 
 ggplot(full_df, aes(x=date_time, y=pm25, color=sensor))+
   #facet_wrap(~type)+
   geom_path(alpha=0.7)+
   scale_x_datetime(date_breaks="1 day",date_labels="%d")+
   scale_y_continuous(breaks=seq(0,550,50))+
+  #theme_few()+
+  theme_igray()+
+  scale_color_brewer(palette="Set2")+
+  theme(legend.position="bottom")+
+  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="Sensor:")
+```
+
+```{r pm25 comp}
+sel_25 <- sel_wrangled %>%
+  select(created_at, `PM2.5_ATM_ug/m3`, `PM2.5_CF1_ug/m3`, sensor) %>%
+  rename(date_time = created_at,
+         atm = `PM2.5_ATM_ug/m3`,
+         cf1 = `PM2.5_CF1_ug/m3`) %>%
+  drop_na() %>%
+  mutate(type = "PA") %>%
+  pivot_longer(cols = c(atm, cf1), names_to = "cf", values_to = "pm25") %>%
+  unite("cf_sensor", c(cf,sensor), sep="_", remove = FALSE)
+
+ggplot(sel_25, aes(x=date_time, y=pm25, color=cf_sensor))+
+#ggplot(sel_25, aes(x=date_time, y=pm25, color=cf, linetype=sensor))+
+  #facet_wrap(~type)+
+  geom_line(alpha=0.7)+
+  scale_x_datetime(date_breaks="1 day",date_labels="%d")+
+  #scale_y_continuous(breaks=seq(0,550,50))+
+  #theme_few()+
+  theme_igray()+
+  #scale_color_brewer(palette="Set2")+
+  theme(legend.position="bottom")+
+  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="CF&Sensor:")
+```
+
+```{r all}
+comp_25 <- full_join(deq_wrangled, sel_25)
+
+ggplot(comp_25, aes(x=date_time, y=pm25, color=sensor,linetype=cf))+
+  #facet_wrap(~type)+
+  geom_line(alpha=0.7)+
+  scale_x_datetime(date_breaks="1 day",date_labels="%d")+
+  #scale_y_continuous(breaks=seq(0,550,50))+
   #theme_few()+
   theme_igray()+
   scale_color_brewer(palette="Set2")+
