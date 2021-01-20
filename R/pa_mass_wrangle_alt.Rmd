@@ -219,3 +219,46 @@ ab_comp_new <- wrangled_mini %>%
   group_by(loc_tag, inout) %>%
   summarize_at(all_of(var_names), mean)
 ```
+
+```{r ab comp again}
+wrangled_data <- read_csv("data/wrangled_new/wrangled_data.csv")
+
+var_names <- names(wrangled_data)[13:22]
+a_vars <- paste(names(wrangled_data)[13:22],"_A",sep="")
+b_vars <- paste(names(wrangled_data)[13:22],"_B",sep="")
+
+wrangled_mini <- wrangled_data %>%
+  filter(str_detect(loc_tag, "STAR"))
+
+ab_comp <- wrangled_mini %>%
+  #group_by(loc_tag, inout, ab, date, hour, min) %>%
+  group_by(loc_tag, inout, ab, date, hour) %>%
+  summarise_at(all_of(var_names), mean) %>%
+  pivot_longer(cols = all_of(var_names), names_to="measurement", values_to="mean_vals") %>%
+  pivot_wider(names_from=ab, values_from=mean_vals) %>%
+  mutate(per_diff = ((A-B)/B)*100)
+
+ab_comp_sum <- ab_comp %>%
+  group_by(loc_tag, inout, date, measurement) %>%
+  summarize(mean_per = mean(per_diff, na.rm=TRUE)) %>%
+  #pivot_wider(names_from=measurement, values_from=mean_per)
+  filter(measurement%in%c("PM1.0_CF1_ug/m3", "PM2.5_CF1_ug/m3", "PM10.0_CF1_ug/m3", "PM2.5_ATM_ug/m3"))
+
+ggplot(ab_comp_sum, aes(x=date, y=mean_per, color=loc_tag))+
+  facet_wrap(~measurement)+
+  geom_hline(yintercept=0, color="gray")+
+  geom_path(alpha=0.5)+
+  theme(legend.position="bottom")
+
+ggplot(ab_comp_sum, aes(x=mean_per))+
+  facet_grid(loc_tag~measurement)+
+  geom_histogram()
+
+ggplot(ab_comp_sum, aes(x=date, y=mean_per))+
+  facet_grid(loc_tag~measurement)+
+  geom_hline(yintercept=0, color="red")+
+  geom_path()+
+  theme(legend.position="bottom")
+
+```
+

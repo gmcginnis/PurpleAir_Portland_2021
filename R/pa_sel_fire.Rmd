@@ -11,6 +11,7 @@ library(tidyverse)
 library(ggthemes)
 library(lubridate)
 library(janitor)
+library(moderndive)
 ```
 
 ```{r data loading}
@@ -195,9 +196,196 @@ sel_comp <- ggplot(comp_25, aes(x=date_time, y=pm25, color=cf_sensor))+
   theme_igray()+
   scale_color_brewer(palette="Set1")+
   theme(legend.position="bottom")+
-  labs(x="Day (Sep 2020)",y="PM2.5 (µg/m^3)",color="CF&Sensor:", title="Comparing PM2.5 values for DEQ vs. PA sensors\nduring September 2020 fires")
+  labs(x="Day (Sep 2020) (UTC)",y="PM2.5 (µg/m^3)",color="CF&Sensor:", title="Comparing PM2.5 values for DEQ vs. PA sensors\nduring September 2020 fires")
 
 ggsave("lafayette_pa_deq_pm25.png",plot=sel_comp, path="figures/")
 ```
+
+```{r cf}
+# comp_25_cf <- sel_wrangled %>%
+#   select(loc_tag, sensor,inout,date,hour,min, `PM2.5_ATM_ug/m3`, `PM2.5_CF1_ug/m3`) %>%
+#   rename(atm = `PM2.5_ATM_ug/m3`,
+#          cf1 = `PM2.5_CF1_ug/m3`) %>%
+#   select(created_at, `PM2.5_ATM_ug/m3`, `PM2.5_CF1_ug/m3`, sensor) %>%
+#   rename(date_time = created_at,
+#          atm = `PM2.5_ATM_ug/m3`,
+#          cf1 = `PM2.5_CF1_ug/m3`)
+pa_cf <- sel_wrangled %>%
+  select(created_at, `PM2.5_ATM_ug/m3`, `PM2.5_CF1_ug/m3`, sensor) %>%
+  rename(date_time = created_at,
+         atm = `PM2.5_ATM_ug/m3`,
+         cf1 = `PM2.5_CF1_ug/m3`)
+
+cf_plot <- ggplot(pa_cf, aes(x=atm,y=cf1,color=sensor))+
+  geom_point(shape=3,size=0.5,alpha=0.3)+
+  labs(title="Comparing PM2.5 measurement methods for\nPA sensor at STAR SE Laf. location",
+       caption="Intercept = -5.39 ± 0.062; CI [-5.51 to 1.52]\nSlope = 1.52 ± 0; CI [1.52 to 1.52]")+
+  theme(legend.position="bottom",
+        plot.caption=element_text(hjust = 0))
+  #geom_abline(slope=1.5,intercept=-5.39)
+  #xlim(0,800)+
+  #ylim(0,800)+
+  #stat_smooth(method=lm)
+
+get_regression_table(lm(cf1~atm, data=pa_cf))
+
+ggsave("lafayette_cf_pm25.png", plot=cf_plot, path="figures/")
+```
+
+```{r cf and deq}
+# cf_deq <- deq_wrangled %>%
+#   select(pm25, date_time, sensor, type) %>%
+#   full_join(pa_cf) %>%
+#   mutate(type = replace_na(type, "PA")) %>%
+#   rename(deq=pm25)
+# 
+# ggplot(cf_deq, aes(x=cf1,y=deq,color=sensor))+
+#   geom_point(shape=3,size=0.5,alpha=0.3)
+
+sel_25_sum <- sel_25 %>%
+  ungroup() %>%
+  select(date_time,cf_sensor,pm25) %>%
+  mutate(month=as.character(month(date_time)),
+         date=day(date_time),
+         hour=hour(date_time)) %>%
+  group_by(cf_sensor, month, date, hour) %>%
+  summarize(pm25 = mean(pm25, na.rm=TRUE)) %>%
+  mutate(type="PA") %>%
+  ungroup() %>%
+  select(month,date,hour,cf_sensor,pm25)
+  # mutate(type="PA",
+  #        year="2020",
+  #        min="0",
+  #        sec="0",
+  #        date_time=as_datetime(paste(year,month,date,hour,min,sec, sep=","), "%y,%m,%d,%h,%m,%s", tz="UTC"))
+
+cf_deq <- deq_wrangled %>%
+  mutate(month=as.character(month(date_time)),
+         date=day(date_time),
+         hour=hour(date_time),
+         cf_sensor="deq") %>%
+  #select(sensor,cf,month,date,hour,pm25,type) %>%
+  select(cf_sensor,month,date,hour,pm25)%>%
+  full_join(sel_25_sum) %>%
+  #select(month,date,hour,cf,pm25) %>%
+  pivot_wider(names_from=cf_sensor, values_from=pm25)
+
+
+# cf_deq <- full_join %>%
+#   select(date_time, type, sensor, cf, pm25) %>%
+#   mutate(cf = replace_na(cf, "deq")) %>%
+#   pivot_wider(names_from=cf, values_from=pm25)
+
+scatter_hourly_deq_atm <- ggplot(cf_deq, aes(y=deq))+
+  geom_point(aes(x=atm_A),color="red",shape=3,alpha=0.5)+
+  geom_point(aes(x=atm_B),color="blue",shape=3,alpha=0.5)+
+  labs(x="atm",caption="A:red, B:blue")
+
+get_regression_table(lm(deq~atm_A, data=cf_deq))
+get_regression_table(lm(deq~atm_B, data=cf_deq))
+
+scatter_hourly_deq_cf1 <- ggplot(cf_deq, aes(y=deq))+
+  geom_point(aes(x=cf1_A),color="red",shape=3,alpha=0.5)+
+  geom_point(aes(x=cf1_B),color="blue",shape=3,alpha=0.5)+
+  labs(x="cf1",caption="A:red, B:blue")
+
+get_regression_table(lm(deq~cf1_A, data=cf_deq))
+get_regression_table(lm(deq~cf1_B, data=cf_deq))
+
+ggsave("scatter_hourly_deq_atm.png", plot=scatter_hourly_deq_atm, path="figures/")
+ggsave("scatter_hourly_deq_cf1.png", plot=scatter_hourly_deq_cf1, path="figures/")
+
+```
+
+```{r sel unavg}
+sel_25_unsum <- sel_25 %>%
+  ungroup() %>%
+  select(date_time,cf_sensor,pm25,cf,sensor) %>%
+  mutate(month=as.character(month(date_time)),
+         date=day(date_time),
+         hour=hour(date_time)) %>%
+  #group_by(cf_sensor, month, date, hour) %>%
+  #summarize(pm25 = mean(pm25, na.rm=TRUE)) %>%
+  mutate(type="PA") %>%
+  ungroup() %>%
+  #select(month,date,hour,cf,sensor,pm25,cf_sensor) %>%
+  select(month,date,hour,cf_sensor,pm25) %>%
+  drop_na() %>%
+  pivot_wider(names_from=cf_sensor, values_from=pm25) %>%
+  pivot_longer(c(atm_A,cf1_A,atm_B,cf1_B)) %>% 
+  mutate(value = map(value, `length<-`, max(lengths(value)))) %>% 
+  pivot_wider(names_from = name, values_from = value) %>% 
+  unnest(c(atm_A,cf1_A,atm_B,cf1_B), keep_empty=TRUE)
+  #unnest(c(atm_A,cf1_A,atm_B,cf1_B),keep_empty=TRUE)
+  #unnest(c(atm_A,cf1_A,atm_B,cf1_B),keep_empty=TRUE)
+  # unnest(atm_A,keep_empty=TRUE) %>%
+  # unnest(atm_B,keep_empty=TRUE) %>%
+  # unnest(cf1_A,keep_empty=TRUE) %>%
+   #unnest(cf1_B,keep_empty=TRUE)
+
+cf_deq_unsum <- deq_wrangled %>%
+  mutate(month=as.character(month(date_time)),
+         date=day(date_time),
+         hour=hour(date_time)) %>%
+  rename(deq=pm25) %>%
+  select(month,date,hour,deq) %>%
+  full_join(sel_25_unsum)
+
+# cf_deq_unsum <- deq_wrangled %>%
+#   mutate(month=as.character(month(date_time)),
+#          date=day(date_time),
+#          hour=hour(date_time),
+#          cf_sensor="deq") %>%
+#   #select(sensor,cf,month,date,hour,pm25,type) %>%
+#   select(cf_sensor,month,date,hour,pm25)%>%
+#   full_join(sel_25_sum) %>%
+#   #select(month,date,hour,cf,pm25) %>%
+#   pivot_wider(names_from=cf_sensor, values_from=pm25)
+
+scatter_deq_atm <- ggplot(cf_deq_unsum, aes(y=deq))+
+  geom_point(aes(x=atm_A),color="red",size=.3,shape=3,alpha=0.3)+
+  geom_point(aes(x=atm_B),color="blue",size=.3,shape=3,alpha=0.3)+
+  labs(x="atm",caption="A:red, B:blue")
+
+get_regression_table(lm(deq~atm_A, data=cf_deq_unsum))
+get_regression_table(lm(deq~atm_B, data=cf_deq_unsum))
+
+scatter_deq_cf1 <- ggplot(cf_deq_unsum, aes(y=deq))+
+  geom_point(aes(x=cf1_A),color="red",size=.3,shape=3,alpha=0.3)+
+  geom_point(aes(x=cf1_B),color="blue",size=.3,shape=3,alpha=0.3)+
+  labs(x="cf1",caption="A:red, B:blue")
+
+get_regression_table(lm(deq~cf1_A, data=cf_deq_unsum))
+get_regression_table(lm(deq~cf1_B, data=cf_deq_unsum))
+
+
+ggsave("scatter_deq_atm.png", plot=scatter_deq_atm, path="figures/")
+ggsave("scatter_deq_cf1.png", plot=scatter_deq_cf1, path="figures/")
+```
+
+
+
+```{r pst, eval=FALSE}
+pst <- comp_25 %>%
+  select(date_time, sensor, type, loc_tag, cf_sensor, cf, pm25) %>%
+  mutate(with = with_tz(date_time, tzone="PST"),
+         forced = force_tz(with, tzone="UTC"),
+         date_time_pst = with_tz(forced, tzone="PST")) %>%
+  select(!c(with,forced,date_time)) %>%
+  rename(date_time=date_time_pst)
+
+ggplot(pst, aes(x=date_time, y=pm25, color=cf_sensor))+
+#ggplot(comp_25, aes(x=date_time, y=pm25, color=sensor,linetype=cf))+
+  #facet_wrap(~type)+
+  geom_line(alpha=0.7)+
+  scale_x_datetime(date_breaks="1 day",date_labels="%d")+
+  #scale_y_continuous(breaks=seq(0,550,50))+
+  #theme_few()+
+  theme_igray()+
+  scale_color_brewer(palette="Set1")+
+  theme(legend.position="bottom")+
+  labs(x="Day (Sep 2020) (PST)",y="PM2.5 (µg/m^3)",color="CF&Sensor:", title="Comparing PM2.5 values for DEQ vs. PA sensors\nduring September 2020 fires")
+```
+
 
 
