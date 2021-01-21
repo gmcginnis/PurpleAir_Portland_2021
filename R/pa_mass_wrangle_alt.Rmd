@@ -228,7 +228,7 @@ a_vars <- paste(names(wrangled_data)[13:22],"_A",sep="")
 b_vars <- paste(names(wrangled_data)[13:22],"_B",sep="")
 
 wrangled_mini <- wrangled_data %>%
-  filter(str_detect(loc_tag, "STAR"))
+  filter(str_detect(loc_tag, "SE"))
 
 ab_comp <- wrangled_mini %>%
   #group_by(loc_tag, inout, ab, date, hour, min) %>%
@@ -236,7 +236,10 @@ ab_comp <- wrangled_mini %>%
   summarise_at(all_of(var_names), mean) %>%
   pivot_longer(cols = all_of(var_names), names_to="measurement", values_to="mean_vals") %>%
   pivot_wider(names_from=ab, values_from=mean_vals) %>%
-  mutate(per_diff = ((A-B)/B)*100)
+  #drop_na(A,B) %>%
+  mutate(#per_diff_B = ((A-B)/B)*100,
+         #per_diff_A = ((B-A)/A)*100,
+         per_diff = 100*abs(A-B)/((A+B)/2))
 
 ab_comp_sum <- ab_comp %>%
   group_by(loc_tag, inout, date, measurement) %>%
@@ -247,7 +250,7 @@ ab_comp_sum <- ab_comp %>%
 ggplot(ab_comp_sum, aes(x=date, y=mean_per, color=loc_tag))+
   facet_wrap(~measurement)+
   geom_hline(yintercept=0, color="gray")+
-  geom_path(alpha=0.5)+
+  geom_line(alpha=0.5)+
   theme(legend.position="bottom")
 
 ggplot(ab_comp_sum, aes(x=mean_per))+
