@@ -1,0 +1,272 @@
+---
+title: "pa_deq_comp"
+author: "Gillian McGinnis"
+date: "1/21/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(moderndive)
+library(ggthemes)
+```
+
+```{r date ranges}
+# pre
+date_pre_start <- as.Date("2020-09-01")
+date_pre_end <- as.Date("2020-09-09")
+
+# during
+date_fire_start <- as.Date("2020-09-10")
+date_fire_end <- as.Date("2020-09-19")
+
+# post
+date_post_start <- as.Date("2020-09-20")
+date_post_end <- as.Date("2020-09-29")
+```
+
+
+```{r data ap}
+ap_paths <- list.files(path = "data/sel_subset/sel_raw_full", full.names = TRUE)
+
+ap_raw <- ap_paths %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         `PM2.5_CF1_ug/m3` = col_double(),
+                                         `PM2.5_ATM_ug/m3` = col_double(),
+                                         .default = col_skip())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/\\w+\\/", "")) #removes filepath name
+```
+
+
+```{r data deq} 
+deq_raw <- read_csv("data/sel_subset/deq_full.csv", skip=3) %>%
+  rename(date_time = X1,
+         pm25 = `ug/m3(L)`) %>%
+  select(date_time, pm25)
+```
+
+
+```{r wrangling ap}
+ap_wrangled <- ap_raw %>%
+  rename(cf1 = `PM2.5_CF1_ug/m3`,
+         atm = `PM2.5_ATM_ug/m3`) %>%
+  #select(source, created_at, cf1, atm) %>%
+  mutate(created_at = as_datetime(created_at, tz = "UTC"), #converting from character to date time format; tz is in UTC
+         #date = date(created_at), #picking out just the date
+         #hour = hour(created_at),
+         loc_tag = str_extract(source, "^[^\\(]+"), #grabbing location tag
+         loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side = "right"), #removing extra whitespace)
+         sensor = case_when(str_detect(source, " B \\(") ~ "B"),
+         sensor = replace_na(sensor, "A")) %>%
+  select(!c(source)) %>%
+  # mutate(fake_pst = with_tz(created_at, tzone="PST"),
+  #        pst_utc = force_tz(fake_pst, tzone="UTC"),
+  #        pst = with_tz(pst_utc, tzone="PST")) %>%
+  mutate(pst_new = with_tz(created_at, tz="Etc/GMT+8")) %>%
+  #select(!c(loc_tag, created_at, fake_pst, pst_utc)) %>%
+  select(!c(loc_tag, created_at)) %>%
+  rename(date_time = pst_new) %>%
+  pivot_longer(cols = c(cf1,atm), names_to = "cf", values_to = "pm25") %>%
+  unite("cf_sensor", c(cf,sensor), sep="_", remove = FALSE) %>%
+  select(!c(sensor,cf))
+
+```
+
+
+```{r wrangling deq}
+deq_wrangled <- deq_raw %>%
+  mutate(date_time = as_datetime(date_time, format="%H:%M %m/%d/%Y", tz = "Etc/GMT+8"),
+  #mutate(date_time = as_datetime(date_time, format="%H:%M %m/%d/%Y", tz = "PST"),
+         cf_sensor = "deq")
+```
+
+```{r combining data}
+se_laf <- ap_wrangled %>%
+  full_join(deq_wrangled) %>%
+  mutate(date = date(date_time),
+         hour = hour(date_time)) %>%
+  mutate(range = case_when(date >= date_pre_start & date <= date_pre_end ~ "pre",
+                   date >= date_fire_start & date <= date_fire_end ~ "fire",
+                   date >= date_post_start & date <= date_post_end ~ "post")) %>%
+  drop_na(range) %>%
+  group_by(cf_sensor, date, hour) %>%
+  summarize(pm25 = mean(pm25, na.rm=TRUE)) %>%
+  pivot_wider(names_from = cf_sensor, values_from = pm25) %>%
+  mutate(atm_avg = (atm_A+atm_B)/2,
+         cf1_avg = (cf1_A+cf1_B)/2) %>%
+  mutate(range = case_when(date >= date_pre_start & date <= date_pre_end ~ "pre",
+                   date >= date_fire_start & date <= date_fire_end ~ "fire",
+                   date >= date_post_start & date <= date_post_end ~ "post")) %>%
+  drop_na(range) %>%
+  select(range,date,hour,deq,everything())
+
+se_laf$range = factor(se_laf$range, levels=c('pre','fire','post'))
+```
+
+
+```{r stat results}
+# Attempts to make a function of this have proved frustrating; drafts are now at the bottom of this doc and will attempt later
+se_laf_slopes <- se_laf %>%
+  group_by(range) %>%
+  summarize(
+    deq_atm_avg = paste((get_regression_table(lm(deq~atm_avg)))$estimate[2],"+/-",(get_regression_table(lm(deq~atm_avg)))$std_error[2]),
+    deq_atm_A = paste((get_regression_table(lm(deq~atm_A)))$estimate[2],"+/-",(get_regression_table(lm(deq~atm_A)))$std_error[2]),
+    deq_atm_B = paste((get_regression_table(lm(deq~atm_B)))$estimate[2],"+/-",(get_regression_table(lm(deq~atm_B)))$std_error[2]),
+    deq_cf1_avg = paste((get_regression_table(lm(deq~cf1_avg)))$estimate[2],"+/-",(get_regression_table(lm(deq~cf1_avg)))$std_error[2]),
+    deq_cf1_A = paste((get_regression_table(lm(deq~cf1_A)))$estimate[2],"+/-",(get_regression_table(lm(deq~cf1_A)))$std_error[2]),
+    deq_cf1_B = paste((get_regression_table(lm(deq~cf1_B)))$estimate[2],"+/-",(get_regression_table(lm(deq~cf1_B)))$std_error[2]),
+    )
+
+df_slopes <- as.data.frame(se_laf_slopes)
+
+```
+
+
+
+```{r data viz}
+se_laf_slopes_long <- se_laf_slopes %>%
+  pivot_longer(cols=2:7, names_to="tag",values_to="slope") %>%
+  mutate(sensor = case_when(
+    str_detect(tag, "_A") ~ "A",
+    str_detect(tag, "_B") ~ "B",
+    str_detect(tag, "_avg") ~ "avg"
+  ),
+  cf = case_when(
+    str_detect(tag, "atm") ~ "atm",
+    str_detect(tag, "cf1") ~ "cf1"
+  ))
+
+
+se_laf_long <- se_laf %>%
+  pivot_longer(cols=c(atm_A,atm_B,cf1_A,cf1_B,atm_avg,cf1_avg), names_to="tag", values_to="pm25") %>%
+  mutate(sensor = case_when(
+    str_detect(tag, "_A") ~ "A",
+    str_detect(tag, "_B") ~ "B",
+    str_detect(tag, "_avg") ~ "avg"
+  ),
+  cf = case_when(
+    str_detect(tag, "atm") ~ "atm",
+    str_detect(tag, "cf1") ~ "cf1"
+  ))
+
+se_laf_long$sensor = factor(se_laf_long$sensor, levels=c('A','B','avg'))
+se_laf_slopes_long$sensor = factor(se_laf_slopes_long$sensor, levels=c('A','B','avg'))
+
+lab_PM <- expression(paste("Comparison of PA and DEQ sensor values for PM2.5 (", mu, "g/m"^3*")"))
+
+lafayette_pa_deq_pm25_full <- ggplot(data=subset(se_laf_long,sensor%in%c("A","B")), aes(x=pm25,y=deq, color=sensor))+
+  facet_grid(cf~range)+
+  geom_point(shape=3, alpha=0.5)+
+  theme_igray()+
+  labs(x="PA",
+       y="DEQ",
+       color="Sensor:",
+       title=lab_PM)+
+  theme(legend.position="bottom")+
+  stat_smooth(method=lm)+
+  geom_text(data=se_laf_slopes_long, aes(x=600,y=50),label=se_laf_slopes_long$slope,check_overlap=TRUE)
+  #annotate(data=se_laf_slopes_long, "text",x=600,y=50, label=slope)
+
+ggsave("lafayette_pa_deq_pm25_full.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
+
+
+# ggplot(se_laf_long, aes(x=pm25,y=deq, color=sensor))+
+#   facet_grid(cf~range)+
+#   geom_point(data=subset(se_laf_long,sensor%in%c("A","B")),shape=3, alpha=0.5)+
+#   theme_igray()+
+#   labs(x="PA",
+#        y="DEQ",
+#        color="Sensor:",
+#        title=lab_PM)+
+#   theme(legend.position="bottom")+
+#   stat_smooth(method=lm)+
+#   geom_text(data=subset(se_laf_slopes_long,sensor=="avg"), aes(x=600,y=50),label=se_laf_slopes_long$slope,check_overlap=TRUE)
+
+# ggplot(data=subset(se_laf_long,sensor%in%c("A","B")), aes(x=pm25,y=deq, color=sensor))+
+#   facet_grid(cf~range)+
+#   geom_point(shape=3, alpha=0.5)+
+#   theme_igray()+
+#   labs(x="PA",
+#        y="DEQ",
+#        color="Sensor:",
+#        title=lab_PM)+
+#   theme(legend.position="bottom")+
+#   stat_smooth(data=subset(se_laf_long,sensor%in%c("avg"),method=lm))
+#   annotate("text",x=600,y=)
+
+# ggplot(se_laf, aes(x=atm_avg,y=deq))+
+#   facet_wrap(~range)+
+#   geom_point(aes(x=atm_A),color="red",shape=3,alpha=0.5)+
+#   geom_point(aes(x=atm_B),color="blue",shape=3,alpha=0.5)+
+#   stat_smooth(method=lm, se=FALSE,color="black")
+#   #annotate("text", x=350,y=30, label=paste(atm_avg_slope), size=2.5)
+# 
+# ggplot(subset(se_laf, range=="pre"), aes(y=deq))+
+#   geom_point(aes(x=atm_A),color="red",shape=3,alpha=0.5)+
+#   geom_point(aes(x=atm_B),color="blue",shape=3,alpha=0.5)+
+#   labs(x="atm",caption="A:red, B:blue")+
+#   stat_smooth(aes(x=atm_A), method=lm, se=FALSE,color="red",alpha=0.3)+
+#   stat_smooth(aes(x=atm_B), method=lm, se=FALSE,color="blue",alpha=0.3)
+
+```
+
+```{r function attempts, eval=FALSE}
+
+expression<- NULL
+filered<- NULL
+#input: subset of interest
+#output: slope w error when compared to DEQ
+slope_info <- function(subset, time){
+  #results <- get_regression_table(lm(deq~subset, data=se_laf))
+  filtered <- NULL
+  expression <- NULL
+  
+  filtered <- se_laf %>%
+    filter(range==time) %>%
+    select(date,hour,deq,subset)
+  #subset <- paste("se_laf$",subset,sep="")
+  
+  #results <- get_regression_table(lm(deq~subset, data=filtered))
+  results <- get_regression_table(lm(deq~4), data=filtered)
+  slope <- results$estimate[2]
+  error <- results$std_error[2]
+  expression <- paste("Slope:",slope,"+/-",error)
+  return(expression)
+}
+
+# value <- NULL
+# 
+# run_slopes <- function(info){
+#   new <- slope_info(se_laf$info)
+#   return(value)
+# }
+# 
+# run_slopes(se_laf_vars)
+slope_info("atm_A", "pre")
+slope_info(atm_A, "pre")
+slope_info(se_laf$atm_A, "post")
+slope_info(se_laf$atm_A, fire)
+slope_info(atm_A, "pre")
+
+atm_A_slope <- slope_info(se_laf$atm_A)
+atm_B_slope <- slope_info(se_laf$atm_B)
+atm_avg_slope <- slope_info(se_laf$atm_avg)
+cf1_A_slope <- slope_info(se_laf$cf1_A)
+cf1_B_slope <- slope_info(se_laf$cf1_B)
+cf1_avg_slope <- slope_info(se_laf$cf1_avg)
+
+gg_func <- function(x_input){
+  gg <- ggplot(se_laf, aes(x=x_input,y=deq))+
+    facet_wrap(~range)+
+    geom_point(shape=3,alpha=0.5)+
+    stat_smooth(method=lm, se=FALSE)
+  return(gg)
+}
+```
