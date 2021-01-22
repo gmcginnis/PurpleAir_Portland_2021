@@ -1,0 +1,43 @@
+---
+title: "tz_test"
+author: "Gillian McGinnis"
+date: "1/19/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+```
+
+```{r data}
+deq_raw <- read_csv("data/sel_subset/deq.csv")
+
+deq_wrangled <- deq_raw %>%
+  clean_names() %>%
+  rename(pm25 = pm2_5_ug_m3_l) %>%
+  mutate(date_time_pst = as_datetime(date_time, format="%H:%M %m/%d/%Y", tz = "PST")) %>%
+  mutate(with = with_tz(date_time_pst, "UTC"),
+         forced = force_tz(date_time_pst, "UTC"))
+
+deq_wrangled
+```
+
+```{r}
+new <- deq_raw %>%
+  clean_names() %>%
+  rename(pm25 = pm2_5_ug_m3_l) %>%
+  # mutate(a_la = as.POSIXct(date_time, format="%H:%M %m/%d/%Y", tz = "America/Los_Angeles"),
+  #        utc_la = with_tz(a_la, "UTC"),
+  #        pst = as.POSIXct(date_time, format="%H:%M %m/%d/%Y", tz = "PST"),
+  #        utc = with_tz(pst, "UTC")) %>%
+  mutate(pst_new = as.POSIXct(date_time, format="%H:%M %m/%d/%Y", tz = "Etc/GMT+8"),
+         utc_new = with_tz(pst_new, "UTC"))
+
+new
+class(new$pst_new)
+class(new$utc_new)
+```
+
+
