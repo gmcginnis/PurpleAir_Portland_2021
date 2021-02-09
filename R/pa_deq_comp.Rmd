@@ -176,7 +176,7 @@ facet_cf <- c("atm" = "ATM",
 
 #lafayette_pa_deq_pm25_full <- ggplot(data=subset(se_laf_long,sensor%in%c("A","B")), aes(x=pm25,y=deq, color=sensor))+
 #lafayette_pa_deq_pm25_full <- 
-ggplot(data=subset(se_laf_long,sensor=="avg"), aes(x=pm25,y=deq))+
+lafayette_pa_deq_pm25_extended <- ggplot(data=subset(se_laf_long,sensor=="avg"), aes(x=pm25,y=deq))+
   facet_grid(cf~range, labeller = labeller(range = facet_range,
                                            cf = facet_cf))+
   geom_point(shape=3, alpha=0.5)+
@@ -187,13 +187,13 @@ ggplot(data=subset(se_laf_long,sensor=="avg"), aes(x=pm25,y=deq))+
        title=lab_PM) +
   #theme(legend.position="bottom")+
   stat_smooth(method=lm) +
-  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"), aes(x = 500, y = 50, label = slope), color = "blue")
+  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"), aes(x = 500, y = 50, label = slope), color = "blue", size=2.5)
 
 #ggsave("lafayette_pa_deq_pm25_full.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
-ggsave("lafayette_pa_deq_pm25_full_extended.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
+#ggsave("lafayette_pa_deq_pm25_full_extended.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
 
 
-ggplot(data=subset(se_laf_long,sensor=="avg" & range%in%c("pre", "post", "home")), aes(x=pm25,y=deq))+
+lafayette_pa_deq_pm25_nofire <- ggplot(data=subset(se_laf_long,sensor=="avg" & range%in%c("pre", "post", "home")), aes(x=pm25,y=deq))+
   facet_grid(cf~range, labeller = labeller(range = facet_range,
                                            cf = facet_cf))+
   geom_point(shape=3, alpha=0.5)+
@@ -204,7 +204,10 @@ ggplot(data=subset(se_laf_long,sensor=="avg" & range%in%c("pre", "post", "home")
        title=lab_PM) +
   #theme(legend.position="bottom")+
   stat_smooth(method=lm) +
-  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"& range%in%c("pre", "post", "home")), aes(x = 200, y = 30, label = slope), color = "blue")
+  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"& range%in%c("pre", "post", "home")), aes(x = 200, y = 30, label = slope), color = "blue", size=2.5)
+
+ggsave("lafayette_pa_deq_pm25_extended.png", plot=lafayette_pa_deq_pm25_extended, path="figures/")
+ggsave("lafayette_pa_deq_pm25_nofire.png", plot=lafayette_pa_deq_pm25_nofire, path="figures/")
 
 # ggplot(data = subset(se_laf_long, sensor %in% c("A", "B")), aes(x = pm25, y = deq, color = sensor)) +
 #   facet_grid(cf~range) +
