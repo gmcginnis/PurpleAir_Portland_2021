@@ -27,6 +27,10 @@ date_fire_end <- as.Date("2020-09-19")
 # post
 date_post_start <- as.Date("2020-09-20")
 date_post_end <- as.Date("2020-09-29")
+
+# home
+date_home_start <- as.Date("2020-10-27")
+date_home_end <- as.Date("2020-11-03")
 ```
 
 
@@ -94,7 +98,8 @@ se_laf <- ap_wrangled %>%
          hour = hour(date_time)) %>%
   mutate(range = case_when(date >= date_pre_start & date <= date_pre_end ~ "pre",
                    date >= date_fire_start & date <= date_fire_end ~ "fire",
-                   date >= date_post_start & date <= date_post_end ~ "post")) %>%
+                   date >= date_post_start & date <= date_post_end ~ "post",
+                   date >= date_home_start & date <= date_home_end ~ "home")) %>%
   drop_na(range) %>%
   group_by(cf_sensor, date, hour) %>%
   summarize(pm25 = mean(pm25, na.rm=TRUE)) %>%
@@ -103,11 +108,12 @@ se_laf <- ap_wrangled %>%
          cf1_avg = (cf1_A+cf1_B)/2) %>%
   mutate(range = case_when(date >= date_pre_start & date <= date_pre_end ~ "pre",
                    date >= date_fire_start & date <= date_fire_end ~ "fire",
-                   date >= date_post_start & date <= date_post_end ~ "post")) %>%
+                   date >= date_post_start & date <= date_post_end ~ "post",
+                   date >= date_home_start & date <= date_home_end ~ "home")) %>%
   drop_na(range) %>%
   select(range,date,hour,deq,everything())
 
-se_laf$range = factor(se_laf$range, levels=c('pre','fire','post'))
+se_laf$range = factor(se_laf$range, levels=c('pre','fire','post', 'home'))
 ```
 
 
@@ -116,12 +122,12 @@ se_laf$range = factor(se_laf$range, levels=c('pre','fire','post'))
 se_laf_slopes <- se_laf %>%
   group_by(range) %>%
   summarize(
-    deq_atm_avg = paste((get_regression_table(lm(deq~atm_avg)))$estimate[2],"+/-",(get_regression_table(lm(deq~atm_avg)))$std_error[2]),
-    deq_atm_A = paste((get_regression_table(lm(deq~atm_A)))$estimate[2],"+/-",(get_regression_table(lm(deq~atm_A)))$std_error[2]),
-    deq_atm_B = paste((get_regression_table(lm(deq~atm_B)))$estimate[2],"+/-",(get_regression_table(lm(deq~atm_B)))$std_error[2]),
-    deq_cf1_avg = paste((get_regression_table(lm(deq~cf1_avg)))$estimate[2],"+/-",(get_regression_table(lm(deq~cf1_avg)))$std_error[2]),
-    deq_cf1_A = paste((get_regression_table(lm(deq~cf1_A)))$estimate[2],"+/-",(get_regression_table(lm(deq~cf1_A)))$std_error[2]),
-    deq_cf1_B = paste((get_regression_table(lm(deq~cf1_B)))$estimate[2],"+/-",(get_regression_table(lm(deq~cf1_B)))$std_error[2]),
+    deq_atm_avg = paste((get_regression_table(lm(deq~atm_avg)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~atm_avg)))$std_error[2]),
+    deq_atm_A = paste((get_regression_table(lm(deq~atm_A)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~atm_A)))$std_error[2]),
+    deq_atm_B = paste((get_regression_table(lm(deq~atm_B)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~atm_B)))$std_error[2]),
+    deq_cf1_avg = paste((get_regression_table(lm(deq~cf1_avg)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~cf1_avg)))$std_error[2]),
+    deq_cf1_A = paste((get_regression_table(lm(deq~cf1_A)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~cf1_A)))$std_error[2]),
+    deq_cf1_B = paste((get_regression_table(lm(deq~cf1_B)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~cf1_B)))$std_error[2]),
     )
 
 df_slopes <- as.data.frame(se_laf_slopes)
@@ -161,20 +167,54 @@ se_laf_slopes_long$sensor = factor(se_laf_slopes_long$sensor, levels=c('A','B','
 
 lab_PM <- expression(paste("Comparison of PA and DEQ sensor values for PM2.5 (", mu, "g/m"^3*")"))
 
-lafayette_pa_deq_pm25_full <- ggplot(data=subset(se_laf_long,sensor%in%c("A","B")), aes(x=pm25,y=deq, color=sensor))+
-  facet_grid(cf~range)+
+facet_range <- c("pre" = "Pre (Sep01-Sep09)",
+                "fire" = "Fire (Sep10-Sep19)",
+                "post" = "Post (Sep20-Sep29)",
+                "home" = "Home (Oct27-Nov03)")
+facet_cf <- c("atm" = "ATM",
+              "cf1" = "CF1")
+
+#lafayette_pa_deq_pm25_full <- ggplot(data=subset(se_laf_long,sensor%in%c("A","B")), aes(x=pm25,y=deq, color=sensor))+
+#lafayette_pa_deq_pm25_full <- 
+ggplot(data=subset(se_laf_long,sensor=="avg"), aes(x=pm25,y=deq))+
+  facet_grid(cf~range, labeller = labeller(range = facet_range,
+                                           cf = facet_cf))+
   geom_point(shape=3, alpha=0.5)+
   theme_igray()+
   labs(x="PA",
        y="DEQ",
        color="Sensor:",
-       title=lab_PM)+
-  theme(legend.position="bottom")+
-  stat_smooth(method=lm)+
-  geom_text(data=se_laf_slopes_long, aes(x=600,y=50),label=se_laf_slopes_long$slope,check_overlap=TRUE)
-  #annotate(data=se_laf_slopes_long, "text",x=600,y=50, label=slope)
+       title=lab_PM) +
+  #theme(legend.position="bottom")+
+  stat_smooth(method=lm) +
+  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"), aes(x = 500, y = 50, label = slope), color = "blue")
 
-ggsave("lafayette_pa_deq_pm25_full.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
+#ggsave("lafayette_pa_deq_pm25_full.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
+ggsave("lafayette_pa_deq_pm25_full_extended.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
+
+
+ggplot(data=subset(se_laf_long,sensor=="avg" & range%in%c("pre", "post", "home")), aes(x=pm25,y=deq))+
+  facet_grid(cf~range, labeller = labeller(range = facet_range,
+                                           cf = facet_cf))+
+  geom_point(shape=3, alpha=0.5)+
+  theme_igray()+
+  labs(x="PA",
+       y="DEQ",
+       color="Sensor:",
+       title=lab_PM) +
+  #theme(legend.position="bottom")+
+  stat_smooth(method=lm) +
+  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"& range%in%c("pre", "post", "home")), aes(x = 200, y = 30, label = slope), color = "blue")
+
+# ggplot(data = subset(se_laf_long, sensor %in% c("A", "B")), aes(x = pm25, y = deq, color = sensor)) +
+#   facet_grid(cf~range) +
+#   geom_point() +
+#   geom_text(data = subset(se_laf_slopes_long, sensor=="A"), aes(x = 600, y = 75, label = slope)) +
+#   geom_text(data = subset(se_laf_slopes_long, sensor=="B"), aes(x = 600, y = 50, label = slope)) +
+#   geom_text(data = subset(se_laf_slopes_long, sensor=="avg"), aes(x = 600, y = 25, label = slope)) +
+#   scale_color_manual(breaks = c("A", "B", "avg"),
+#                      values = c("#66c2a5", "#8da0cb", "#fc8d62"))
+  #geom_text(data = subset(se_laf_slopes_long, sensor=="avg"), aes(x = 600, y = 50, label = slope))
 
 
 # ggplot(se_laf_long, aes(x=pm25,y=deq, color=sensor))+
