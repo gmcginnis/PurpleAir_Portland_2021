@@ -187,7 +187,7 @@ lafayette_pa_deq_pm25_extended <- ggplot(data=subset(se_laf_long,sensor=="avg"),
        title=lab_PM) +
   #theme(legend.position="bottom")+
   stat_smooth(method=lm) +
-  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"), aes(x = 500, y = 50, label = slope), color = "blue", size=2.5)
+  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"), aes(x = 500, y = 50, label = slope), color = "blue", size=2)
 
 #ggsave("lafayette_pa_deq_pm25_full.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
 #ggsave("lafayette_pa_deq_pm25_full_extended.png", plot=lafayette_pa_deq_pm25_full, path="figures/")
@@ -204,7 +204,7 @@ lafayette_pa_deq_pm25_nofire <- ggplot(data=subset(se_laf_long,sensor=="avg" & r
        title=lab_PM) +
   #theme(legend.position="bottom")+
   stat_smooth(method=lm) +
-  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"& range%in%c("pre", "post", "home")), aes(x = 200, y = 30, label = slope), color = "blue", size=2.5)
+  geom_text(data = subset(se_laf_slopes_long, sensor=="avg"& range%in%c("pre", "post", "home")), aes(x = 200, y = 30, label = slope), color = "blue", size=2)
 
 ggsave("lafayette_pa_deq_pm25_extended.png", plot=lafayette_pa_deq_pm25_extended, path="figures/")
 ggsave("lafayette_pa_deq_pm25_nofire.png", plot=lafayette_pa_deq_pm25_nofire, path="figures/")
