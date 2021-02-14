@@ -1,0 +1,83 @@
+---
+title: "pa_oct"
+author: "Gillian McGinnis"
+date: "2/13/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+```
+
+```{r defining periods}
+#oct_start <- as.Date("2020-10-01")
+#oct_end <- as.Date("2020-10-15")
+oct_start <- 1
+oct_end <- 15
+
+morning_start <- 6
+morning_end <- 9
+
+afternoon_start <- 12
+afternoon_end <- 15
+
+night_start <- 21
+night_end <- 23
+```
+
+
+```{r data import}
+wrangled_data <- read_csv("data/wrangled_new/wrangled_data.csv")
+```
+
+
+```{r subsetting and averaging data}
+vars_of_interest <- names(wrangled_data)[13:22]
+
+october_averages <- wrangled_data %>%
+  rename(utc = created_at) %>%
+  select(!c(X1, date, time, month, date, hour, min)) %>%
+  mutate(pst = with_tz(utc, tz = "Etc/GMT+8")) %>%
+  mutate(
+    month = month(pst, label=TRUE),
+    day = day(pst),
+    hour = hour(pst),
+    min = minute(pst)
+    ) %>%
+  filter(
+    month == "Oct",
+    day >= oct_start,
+    day <= oct_end
+    ) %>%
+  mutate(group = case_when(
+    hour >= morning_start & hour <= morning_end ~ "morning",
+    hour >= afternoon_start & hour <= afternoon_end ~ "afternoon",
+    hour >= night_start & hour <= night_end ~ "night"
+    )) %>%
+  drop_na(group) %>%
+  select(pst, month, day, hour, min, group, utc, everything()) %>%
+  group_by(loc_tag, long, lat, inout, ab, group) %>%
+  summarize_at(vars_of_interest, mean, na.rm = TRUE)
+```
+
+```{r quick viz tests}
+oct_subset <- october_averages %>%
+  filter(loc_tag != "South Tabor")
+
+ggplot(oct_subset, aes(x = loc_tag, y = `PM2.5_ATM_ug/m3`)) +
+  facet_wrap(~group) +
+  geom_point() +
+  coord_flip()
+
+ggplot(oct_subset, aes(x = long, y = lat, color = `PM2.5_ATM_ug/m3`, size = `PM2.5_ATM_ug/m3`)) +
+  #facet_wrap(~group) +
+  facet_grid(ab~group) +
+  geom_point() +
+  theme(legend.position = "bottom")
+```
+
+
+
