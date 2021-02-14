@@ -10,6 +10,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(lubridate)
+library(viridis)
+library(ggthemes)
+```
+
+```{r data import}
+wrangled_data <- read_csv("data/wrangled_new/wrangled_data.csv")
 ```
 
 ```{r defining periods}
@@ -18,25 +24,26 @@ library(lubridate)
 oct_start <- 1
 oct_end <- 15
 
+## Times are from start time to end-1, b/c grabbing hours from POSIXct are not rounded
+# Ex. 15:08 and 15:45 are both considered hour 15, so to go to 16 one should limit to <=15
+
+## 6am to 9am
 morning_start <- 6
-morning_end <- 9
+morning_end <- 8
 
+## 12pm to 3pm
 afternoon_start <- 12
-afternoon_end <- 15
+afternoon_end <- 14
 
+## 9pm to midnight
 night_start <- 21
 night_end <- 23
-```
 
-
-```{r data import}
-wrangled_data <- read_csv("data/wrangled_new/wrangled_data.csv")
+vars_of_interest <- names(wrangled_data)[13:22]
 ```
 
 
 ```{r subsetting and averaging data}
-vars_of_interest <- names(wrangled_data)[13:22]
-
 october_averages <- wrangled_data %>%
   rename(utc = created_at) %>%
   select(!c(X1, date, time, month, date, hour, min)) %>%
@@ -52,32 +59,49 @@ october_averages <- wrangled_data %>%
     day >= oct_start,
     day <= oct_end
     ) %>%
-  mutate(group = case_when(
-    hour >= morning_start & hour <= morning_end ~ "morning",
-    hour >= afternoon_start & hour <= afternoon_end ~ "afternoon",
-    hour >= night_start & hour <= night_end ~ "night"
-    )) %>%
-  drop_na(group) %>%
-  select(pst, month, day, hour, min, group, utc, everything()) %>%
-  group_by(loc_tag, long, lat, inout, ab, group) %>%
-  summarize_at(vars_of_interest, mean, na.rm = TRUE)
+  mutate(
+    time_group = case_when(
+      hour >= morning_start & hour <= morning_end ~ "morning",
+      hour >= afternoon_start & hour <= afternoon_end ~ "afternoon",
+      hour >= night_start & hour <= night_end ~ "night"
+      )
+    ) %>%
+  drop_na(time_group) %>%
+  select(pst, month, day, hour, min, time_group, utc, everything()) %>%
+  group_by(loc_tag, long, lat, inout, time_group) %>%
+  summarize_at(vars_of_interest, mean, na.rm = TRUE) %>%
+  mutate(
+    time_group = factor(
+      time_group,
+      levels = c("morning", "afternoon", "night")
+      )
+    )
 ```
+
+```{r saving dataset}
+write.csv(october_averages, "data/wrangled_new/october_averages.csv", row.names=TRUE)
+```
+
+
 
 ```{r quick viz tests}
 oct_subset <- october_averages %>%
+  #filter(inout == "outdoor") %>%
   filter(loc_tag != "South Tabor")
 
 ggplot(oct_subset, aes(x = loc_tag, y = `PM2.5_ATM_ug/m3`)) +
-  facet_wrap(~group) +
+  facet_grid(inout~time_group) +
+  #facet_wrap(~time_group) +
   geom_point() +
   coord_flip()
 
 ggplot(oct_subset, aes(x = long, y = lat, color = `PM2.5_ATM_ug/m3`, size = `PM2.5_ATM_ug/m3`)) +
-  #facet_wrap(~group) +
-  facet_grid(ab~group) +
-  geom_point() +
-  theme(legend.position = "bottom")
+  facet_grid(inout~time_group) +
+  #facet_wrap(~time_group) +
+  geom_point(alpha = 0.5) +
+  theme_few() +
+  theme(legend.position = "bottom") +
+  scale_color_viridis(direction = -1)
+
 ```
-
-
 
