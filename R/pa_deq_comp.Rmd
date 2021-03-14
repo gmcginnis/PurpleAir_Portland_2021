@@ -282,6 +282,8 @@ lafayette_pa_deq_pm25_proposal <- ggplot(data = prop_subset, aes(x = pm25, y = d
   stat_smooth(method = lm) +
   geom_text(data = prop_subset_labels, aes(x = 350, y = 50, label = slope), color = "blue", size=3)
 
+lafayette_pa_deq_pm25_proposal
+
 ggsave("lafayette_pa_deq_pm25_proposal.png", plot=lafayette_pa_deq_pm25_proposal, path="figures/", width = 7, height = 4.5)
 ```
 
