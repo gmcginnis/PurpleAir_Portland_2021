@@ -260,6 +260,32 @@ ggsave("lafayette_pa_deq_pm25_nofire.png", plot=lafayette_pa_deq_pm25_nofire, pa
 
 ```
 
+```{r proposal_image}
+prop_subset <- se_laf_long %>%
+  filter(sensor == "avg",
+         cf == "atm",
+         range != "home")
+
+prop_subset_labels <- se_laf_slopes_long %>%
+  filter(sensor == "avg",
+         cf == "atm",
+         range != "home")
+
+lafayette_pa_deq_pm25_proposal <- ggplot(data = prop_subset, aes(x = pm25, y = deq)) +
+  facet_wrap(~range, labeller = labeller(range = facet_range)) +
+  geom_point(shape = 3, alpha=0.5)+
+  theme_igray()+
+  labs(x="PA",
+       y="DEQ",
+       color="Sensor:",
+       title=lab_PM) +
+  stat_smooth(method = lm) +
+  geom_text(data = prop_subset_labels, aes(x = 350, y = 50, label = slope), color = "blue", size=3)
+
+ggsave("lafayette_pa_deq_pm25_proposal.png", plot=lafayette_pa_deq_pm25_proposal, path="figures/")
+```
+
+
 ```{r function attempts, eval=FALSE}
 
 expression<- NULL
