@@ -1,0 +1,135 @@
+---
+title: "mapping"
+author: "Gillian McGinnis"
+date: "6/9/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggmap)
+```
+
+```{r data_loading}
+data_day <- read.csv("data/wrangled_new/wrangled_day.csv")
+```
+
+```{r corrections}
+data_corr <- data_day %>% 
+  filter(inout == "outside") %>% 
+  rename(cf1 = `PM2.5_CF1_ug.m3`,
+         #atm = `PM2.5_ATM_ug.m3`,
+         temp = `Temperature_F`,
+         rh = `Humidity_.`) %>% 
+  select(c(loc_tag, ab, long, lat, date, cf1, temp, rh)) %>% 
+  pivot_wider(names_from = ab, values_from = cf1) %>% 
+  mutate(
+    diff = (A-B),
+    per_diff = 100*(abs(A-B))/((A+B)/2),
+    drop = case_when(
+      diff >= 5 & per_diff >= 62 ~ TRUE,
+      TRUE ~ FALSE #fills all others with false
+    )
+  ) %>% 
+  filter(drop != TRUE) %>% 
+  select(!c(drop, diff, per_diff)) %>% 
+  pivot_longer(cols = c("A", "B"), names_to = "ab") %>%
+  group_by(loc_tag, long, lat, date) %>% 
+  summarize(cf1 = mean(value, na.rm = TRUE),
+            temp = mean(temp, na.rm = TRUE),
+            rh = mean(rh, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(
+    "epa_2020" = 0.524*cf1 - 0.0852*rh + 5.72,
+    "epa_2021" = case_when(
+      cf1 <= 343 ~ 0.52*cf1 - 0.086*rh + 5.75,
+      cf1 > 343 ~ 0.46*cf1 + (3.93*10^(-4))*(cf1^2) +2.97
+    )
+  )
+```
+
+```{r getting_map, eval = FALSE}
+#
+lat_min <- 45.4
+lat_max <- 45.65
+long_min <- -122.854
+long_max <- -122.58
+
+
+pdx_box <- c(
+  bottom = lat_min,
+  top = lat_max,
+  left = long_min,
+  right = long_max
+)
+
+#avaialble maps: terrain, terrain-background, terrain-labels, terrain-lines, toner, toner-2010, toner-2011, toner-background, toner-hybrid, toner-labels, toner-lines, toner-lite, watercolor
+pdx_map <- get_stamenmap(
+  pdx_box,
+  maptype = "toner-lite",
+  zoom = 11
+)
+
+save(pdx_map, file = "data/maps/pdx_map.RData")
+```
+
+```{r}
+# pre
+date_pre_start <- as.Date("2020-09-01")
+date_pre_end <- as.Date("2020-09-09")
+# during
+date_fire_start <- as.Date("2020-09-10")
+date_fire_end <- as.Date("2020-09-19")
+# post
+date_post_start <- as.Date("2020-09-20")
+date_post_end <- as.Date("2020-09-29")
+```
+
+
+```{r}
+load("data/maps/pdx_map.RData")
+
+data_ranged <- data_corr %>% 
+  mutate(range = case_when(date >= date_pre_start & date <= date_pre_end ~ "pre",
+                   date >= date_fire_start & date <= date_fire_end ~ "fire",
+                   date >= date_post_start & date <= date_post_end ~ "post")) %>%
+  drop_na(range) %>% 
+  group_by(loc_tag, long, lat, range, temp, rh)
+
+# data_cf1 <- data_ranged %>% 
+#   summarize(mean = mean(cf1))
+# 
+# data_epa20 <- data_ranged %>% 
+#   summarize(mean = mean(epa_2020))
+# 
+# data_epa21 <- data_range %>% 
+#   summarize(mean = mean(epa_2021))
+# 
+# pdx_map %>% 
+#   ggmap() +
+#   geom_point(
+#     data = data_corr,
+#     aes(x = long, y = lat, color = cf1),
+#     inherit.aes = FALSE
+#   )
+
+map_aq <- function(pm25) {
+  data_filtered <- data_ranged %>% 
+    summarize(mean = mean({{pm25}})) %>% 
+    ungroup()
+  
+  pdx_map %>% 
+    ggmap() +
+    geom_point(
+      data = data_filtered,
+      aes(x = long, y = lat, color = mean),
+      inherit.aes = FALSE
+    )
+}
+
+map_aq("cf1")
+```
+
+
+
