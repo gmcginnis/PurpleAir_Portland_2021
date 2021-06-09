@@ -51,13 +51,15 @@ data_corr <- data_day %>%
       cf1 <= 343 ~ 0.52*cf1 - 0.086*rh + 5.75,
       cf1 > 343 ~ 0.46*cf1 + (3.93*10^(-4))*(cf1^2) +2.97
     )
-  )
+  ) %>% 
+  filter(loc_tag != "Ogden84th") #removing Vancouver point
 ```
 
 ```{r getting_map, eval = FALSE}
 #
 lat_min <- 45.4
-lat_max <- 45.65
+#lat_max <- 45.65 #old val that would include the point in Vancouver
+lat_max <- 45.6
 long_min <- -122.854
 long_max <- -122.58
 
