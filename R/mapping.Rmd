@@ -8,7 +8,9 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
+library(tidyverse)
 library(ggmap)
+library(viridis)
 ```
 
 ```{r data_loading}
@@ -18,10 +20,13 @@ data_day <- read.csv("data/wrangled_new/wrangled_day.csv")
 ```{r corrections}
 data_corr <- data_day %>% 
   filter(inout == "outside") %>% 
-  rename(cf1 = `PM2.5_CF1_ug.m3`,
-         #atm = `PM2.5_ATM_ug.m3`,
-         temp = `Temperature_F`,
-         rh = `Humidity_.`) %>% 
+  rename(
+    cf1 = `PM2.5_CF1_ug.m3`,
+    #atm = `PM2.5_ATM_ug.m3`,
+    temp = `Temperature_F`,
+    rh = `Humidity_.`
+  ) %>% 
+  filter(!(cf1 >= 1000)) %>% #filtering out max range
   select(c(loc_tag, ab, long, lat, date, cf1, temp, rh)) %>% 
   pivot_wider(names_from = ab, values_from = cf1) %>% 
   mutate(
@@ -74,7 +79,7 @@ pdx_map <- get_stamenmap(
 save(pdx_map, file = "data/maps/pdx_map.RData")
 ```
 
-```{r}
+```{r dates}
 # pre
 date_pre_start <- as.Date("2020-09-01")
 date_pre_end <- as.Date("2020-09-09")
@@ -91,11 +96,16 @@ date_post_end <- as.Date("2020-09-29")
 load("data/maps/pdx_map.RData")
 
 data_ranged <- data_corr %>% 
-  mutate(range = case_when(date >= date_pre_start & date <= date_pre_end ~ "pre",
-                   date >= date_fire_start & date <= date_fire_end ~ "fire",
-                   date >= date_post_start & date <= date_post_end ~ "post")) %>%
+  mutate(
+    range = case_when(
+      date >= date_pre_start & date <= date_pre_end ~ "pre",
+      date >= date_fire_start & date <= date_fire_end ~ "fire",
+      date >= date_post_start & date <= date_post_end ~ "post"
+    ),
+    range = factor(range, levels = c("pre", "fire", "post"))
+  ) %>% 
   drop_na(range) %>% 
-  group_by(loc_tag, long, lat, range, temp, rh)
+  group_by(loc_tag, long, lat, range)
 
 # data_cf1 <- data_ranged %>% 
 #   summarize(mean = mean(cf1))
@@ -114,10 +124,12 @@ data_ranged <- data_corr %>%
 #     inherit.aes = FALSE
 #   )
 
-map_aq <- function(pm25) {
+map_aq <- function(pm25_input, range_input) {
   data_filtered <- data_ranged %>% 
-    summarize(mean = mean({{pm25}})) %>% 
+    filter(range == {{range_input}}) %>% 
+    summarize(mean = mean({{pm25_input}})) %>% 
     ungroup()
+  return(data_filtered)
   
   pdx_map %>% 
     ggmap() +
@@ -125,11 +137,55 @@ map_aq <- function(pm25) {
       data = data_filtered,
       aes(x = long, y = lat, color = mean),
       inherit.aes = FALSE
-    )
+    ) +
+    scale_color_viridis()
 }
 
-map_aq("cf1")
+map_aq(cf1, "pre")
+
+pdx_map %>% 
+  ggmap() +
+  facet_wrap(~range) +
+  geom_point(
+    data = data_ranged,
+    aes(x = long, y = lat, color = cf1),
+    inherit.aes = FALSE
+  ) +
+  scale_color_viridis() +
+  theme(legend.position = "bottom")
 ```
+
+```{r}
+data_ranged_long <- data_ranged %>% 
+  pivot_longer(cols = c(cf1, epa_2020, epa_2021), names_to = "corr_factor", values_to = "pm_val") %>% 
+  group_by(loc_tag, long, lat, range, corr_factor) %>% 
+  summarise_at(c("temp", "rh", "pm_val"), mean, na.rm = TRUE)
+
+#map_wildfire_epa <- pdx_map %>% 
+pdx_map %>% 
+  ggmap() +
+  facet_grid(corr_factor~range) +
+  geom_point(
+    data = data_ranged_long,
+    aes(x = long, y = lat, color = pm_val),
+    inherit.aes = FALSE
+  ) +
+  scale_color_viridis() +
+  labs(
+    title = "Map of PM2.5 values in PDX",
+    subtitle = "Columns corrolate to time ranges.\nRows represent correction factors.",
+    color = "PM2.5 (µg/m^3): "
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "top",
+    plot.background = element_rect(fill = "darkgray")
+  )
+
+#having trouble w ggsave right now.. will do manually
+#ggsave(map_wildfire_epa, device = "png", path = "figures/map_wildfire_epa.png")
+```
+
 
 
 
