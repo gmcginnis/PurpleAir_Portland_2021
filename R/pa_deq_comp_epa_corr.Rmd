@@ -1,0 +1,119 @@
+---
+title: "pa_deq_comp_epa_corr"
+author: "Gillian McGinnis"
+date: "6/9/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Much of this file brought over from 'pa_deq_comp.Rmd'
+
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(moderndive)
+library(ggthemes)
+```
+
+```{r date ranges}
+# pre
+date_pre_start <- as.Date("2020-09-01")
+date_pre_end <- as.Date("2020-09-09")
+
+# during
+date_fire_start <- as.Date("2020-09-10")
+date_fire_end <- as.Date("2020-09-19")
+
+# post
+date_post_start <- as.Date("2020-09-20")
+date_post_end <- as.Date("2020-09-29")
+
+# home
+date_home_start <- as.Date("2020-10-27")
+date_home_end <- as.Date("2020-11-03")
+```
+
+
+```{r data ap}
+ap_paths <- list.files(path = "data/sel_subset/sel_raw_full", full.names = TRUE)
+
+ap_raw <- ap_paths %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
+                                         created_at = col_character(),
+                                         `PM2.5_CF1_ug/m3` = col_double(),
+                                         `PM2.5_ATM_ug/m3` = col_double(),
+                                         .default = col_skip())), .id="source") %>%
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/\\w+\\/", "")) #removes filepath name
+```
+
+
+```{r data deq} 
+deq_raw <- read_csv("data/sel_subset/deq_full.csv", skip=3) %>%
+  rename(date_time = X1,
+         pm25 = `ug/m3(L)`) %>%
+  select(date_time, pm25)
+```
+
+
+```{r wrangling ap}
+ap_wrangled <- ap_raw %>%
+  rename(cf1 = `PM2.5_CF1_ug/m3`,
+         atm = `PM2.5_ATM_ug/m3`) %>%
+  mutate(created_at = as_datetime(created_at, tz = "UTC"), #converting from character to date time format; tz is in UTC
+         loc_tag = str_extract(source, "^[^\\(]+"), #grabbing location tag
+         loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side = "right"), #removing extra whitespace)
+         sensor = case_when(str_detect(source, " B \\(") ~ "B"),
+         sensor = replace_na(sensor, "A")) %>%
+  select(!c(source)) %>%
+  mutate(pst_new = with_tz(created_at, tz="Etc/GMT+8")) %>%
+  select(!c(loc_tag, created_at)) %>%
+  rename(date_time = pst_new) %>%
+  pivot_longer(cols = c(cf1,atm), names_to = "cf", values_to = "pm25") %>%
+  unite("cf_sensor", c(cf,sensor), sep="_", remove = FALSE) %>%
+  select(!c(sensor,cf))
+
+```
+
+```{r epa_filter}
+temp_ap <- ap_raw %>% 
+  rename(
+    cf1 = `PM2.5_CF1_ug/m3`,
+    atm = `PM2.5_ATM_ug/m3`
+  ) %>% 
+  mutate(
+    created_at = as_datetime(created_at, tz = "UTC"), #converting from character to date time format; tz is in UTC
+         loc_tag = str_extract(source, "^[^\\(]+"), #grabbing location tag
+         loc_tag = str_replace(loc_tag, " B ", ""),
+         loc_tag = str_trim(loc_tag, side = "right"), #removing extra whitespace)
+         sensor = case_when(str_detect(source, " B \\(") ~ "B"),
+         sensor = replace_na(sensor, "A")
+  ) %>% 
+  mutate(pst_new = with_tz(created_at, tz="Etc/GMT+8")) %>% 
+  select(!c(source, created_at)) %>% 
+  mutate(
+    date = date(pst_new),
+    hour = hour(pst_new)
+  )
+
+# Testing 90% filter. Problem: all values in this df have >90% completion (i.e. mostly NAs)
+temp_ap %>% 
+  group_by(loc_tag, sensor, date, hour) %>% 
+  summarize(na_sum = sum(is.na(cf1)),
+            total = n()) %>% view()
+
+temp_ap %>% 
+  select(!atm) %>% 
+  mutate(sensor = as.factor(sensor)) %>% 
+  group_by(loc_tag, date, hour, pst_new) %>% 
+  pivot_wider(names_from = sensor, values_from = cf1) #return to
+  
+```
+
+```{r epa_corr}
+# 2020 correction factor: PM_2.5 = 0.524 * (CF1 value of avg'd A&B) - 0.0852*RH + 5.72
+```
+
