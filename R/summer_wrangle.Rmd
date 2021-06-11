@@ -1,0 +1,50 @@
+---
+title: "new_wrangle"
+author: "Gillian McGinnis"
+date: "6/11/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(data.table)
+```
+
+
+```{r}
+
+
+read.csv(
+  "data/raw/Bridlemile (outside) (45.493717 -122.716816) Primary Real Time 09_01_2020 11_30_2020.csv",
+  colClasses = c(
+    entry_id = "NULL", UptimeMinutes = "NULL", X = "NULL",
+    created_at = "POSIXct",
+    RSSI_dbm = "NULL"
+  )) %>% 
+  janitor::clean_names() %>% 
+  rename_with(
+    sub("_ug_m3", ""), ends_with("ug_m3")
+  ) %>% 
+  # rename(
+  #   pm1_cf1 = `PM1.0_CF1_ug.m3`,
+  #   pm25_cf1 = `PM2.5_CF1_ug.m3`,
+  #   pm10_cf1 = `PM10.0_CF1_ug.m3`,
+  #   rh = str_detect(., "Humidity")
+  # ) %>% 
+  head()
+
+fread(
+  "data/raw/Bridlemile (outside) (45.493717 -122.716816) Primary Real Time 09_01_2020 11_30_2020.csv",
+  sep = ",",
+  colClasses = c(
+    list("NULL" = c("entry_id", "UptimeMinutes", "V11"))
+  )
+  #header = TRUE,
+  ) %>% 
+  
+
+#readr::read_csv("data/raw/1907 ZE Home (inside) (45.497901 -122.609954) Primary Real Time 09_01_2020 11_30_2020.csv")
+```
+
