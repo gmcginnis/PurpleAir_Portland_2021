@@ -9,7 +9,7 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r, eval=FALSE}
+```{r}
 library(knitr)
 library(rmarkdown)
 devtools::install_github("MazamaScience/AirSensor")
@@ -17,4 +17,14 @@ devtools::install_github("MazamaScience/AirSensor")
 library(tidyverse)
 library(AirSensor)
 ```
+
+```{r}
+pat_createNew(
+  label = "Seattle", 
+  pas = example_pas, 
+  startdate = 20180701, 
+  enddate = 20180901
+)
+```
+
 
