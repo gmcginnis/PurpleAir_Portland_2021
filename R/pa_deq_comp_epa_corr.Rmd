@@ -174,34 +174,53 @@ se_laf <- laf_epa_corr %>%
   full_join(laf_uncorr) %>% 
   full_join(deq_wrangled) %>% 
   rename("deq" = pm25) %>% 
-  mutate(range = case_when(
+  mutate(range = factor(case_when(
     date >= date_pre_start & date <= date_pre_end ~ "pre",
     date >= date_fire_start & date <= date_fire_end ~ "fire",
     date >= date_post_start & date <= date_post_end ~ "post",
     date >= date_home_start & date <= date_home_end ~ "home"
-  )) %>% 
+  ))) %>% 
   drop_na(range) %>% 
+  arrange(date_time) %>% 
   mutate(
-    range = factor(range, levels = c('pre', 'fire', 'post', 'home'))
+    range = fct_inorder(range)
   )
 ```
 
 ```{r stat_function, eval = FALSE}
-# get_slope <- function(input_pa_var){
-#   se_laf %>% 
-#     group_by(range) %>% 
-#     summarize(output_equation = 
-#       paste(
-#       (get_regression_table(lm(deq~{{input_pa_var}})))$estimate[2],
-#       "\u00B1",
-#       (get_regression_table(lm(deq~{{input_pa_var}})))$std_error[2]
-#     ))
-# }
-# 
-# get_slope(cf1)
+get_slope <- function(input_pa_var){
+  se_laf %>%
+    group_by(range) %>%
+    summarize(
+    slope = get_regression_table(lm(deq~{{input_pa_var}}))$estimate[2],
+    error = get_regression_table(lm(deq~{{input_pa_var}}))$std_error[2]
+  ) %>% 
+  unite("ouput_equation", c(slope, error), sep = " \u00B1 ")
+}
+
+get_slope(uncorr)
+
+se_laf %>% 
+  group_by(range) %>% 
+  summarize(
+    slope = get_regression_table(lm(deq~uncorr))$estimate[2],
+    error = get_regression_table(lm(deq~uncorr))$std_error[2]
+  ) %>% 
+  unite("slope_error", c(slope, error), sep = " \u00B1 ")
 
 # se_laf %>% 
 #   group_by(range) %>% 
+#   summarize_at(
+#         c("uncorr", "epa_2020", "epa_2021"),
+#         slope = get_regression_table(lm(deq~.x))$estimate[2]
+#         # list(
+#         #   slope = get_regression_table(lm(deq~.x))$estimate[2],
+#         #   error = get_regression_table(lm(deq~.x))$std_error[2]
+#         # )
+#   )
+
+# se_laf %>%
+#   group_by(range) %>%
 #   summarize_at(
 #     c("cf1", "epa_2020", "epa_2021"),
 #     paste(
@@ -227,40 +246,53 @@ se_laf_slopes <- se_laf %>%
   )
 
 df_slopes <- as.data.frame(se_laf_slopes) %>% 
-  pivot_longer(cols=2:4, names_to = "pa_name", values_to = "slope")
+  pivot_longer(cols=2:4, names_to = "pa_name", values_to = "slope") %>% 
+  filter(range != "home") %>% 
+  mutate(pa_name = factor(pa_name, levels = c("uncorr", "epa_2020", "epa_2021")))
 ```
 
 
 ```{r viz}
-facet_range <- c("pre" = "Pre (Sep01-Sep09)",
-                "fire" = "Fire (Sep10-Sep19)",
-                "post" = "Post (Sep20-Sep29)",
-                "home" = "Home (Oct27-Nov03)")
+facet_range <- c(
+  "pre" = "Pre (Sep01-Sep09)",
+  "fire" = "Fire (Sep10-Sep19)",
+  "post" = "Post (Sep20-Sep29)",
+  "home" = "Home (Oct27-Nov03)"
+)
 
 facet_corr <- c(
   "uncorr" = "Uncorrected",
-  "epa_2020" = "2020 correction",
-  "epa_2021" = "Summer 2020 correction"
+  "epa_2020" = "EPA 2020",
+  "epa_2021" = "EPA 2021"
 )
 
 lab_PM <- expression(paste("Comparison of PA and DEQ sensor values for PM2.5 (", mu, "g/m"^3*")"))
 
+#lafayette_pa_deq_EPA <- se_laf %>% 
 se_laf %>% 
   filter(range != "home") %>% 
   pivot_longer(cols = c(uncorr, epa_2020, epa_2021), names_to = "pa_name", values_to = "pa_value") %>% 
   mutate(pa_name = factor(pa_name, levels = c("uncorr", "epa_2020", "epa_2021"))) %>% 
   ggplot(aes(x = pa_value, y = deq)) +
-  facet_grid(as.factor(pa_name)~as.factor(range), labeller = labeller(pa_name = facet_corr, range = facet_range)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+  facet_grid(
+    pa_name~range,
+    #scales = "free",
+    labeller = labeller(pa_name = facet_corr, range = facet_range)
+  ) +
   geom_point(shape = 3, alpha=0.5) +
   theme_igray() +
   stat_smooth(method = lm) +
-  geom_text(data = df_slopes, aes(x = 600, y = 50, label = slope), color = "blue", size = 4) +
+  geom_text(data = df_slopes, aes(x = 600, y = 50, label = slope), color = "blue", size = 3) +
   labs(
     title = lab_PM,
-    subtitle = "Data from SE Laf. STAR lab PA sensor, and co-located DEQ sensor.",
-    caption = "Columns represent different time range subsets. Rows represent EPA correction factors",
+    subtitle = "Scatterplot with slope (blue) and underlayed 1:1 ratio line",
+    caption = "Data from SE Laf. STAR lab PA sensor (CF1 outputs), and co-located DEQ sensor.
+    Columns represent different time range subsets. Rows represent EPA correction factors.",
     x = "PA",
     y = "DEQ"
   )
+
+#ggsave(lafayette_pa_deq_EPA, file = "/figures/lafayette_pa_deq_EPA.png", width = 10)
 ```
 
