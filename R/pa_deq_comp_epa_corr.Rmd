@@ -17,7 +17,7 @@ library(moderndive)
 library(ggthemes)
 ```
 
-```{r date ranges}
+```{r date_ranges}
 # pre
 date_pre_start <- as.Date("2020-09-01")
 date_pre_end <- as.Date("2020-09-09")
@@ -35,52 +35,46 @@ date_home_start <- as.Date("2020-10-27")
 date_home_end <- as.Date("2020-11-03")
 ```
 
-
-```{r data ap}
-ap_paths <- list.files(path = "data/sel_subset/sel_raw_full", full.names = TRUE)
-
-ap_raw <- ap_paths %>%
-  set_names() %>%
-  map_dfr(~read_csv(.x, col_types = cols(source = col_character(),
-                                         created_at = col_character(),
-                                         `PM2.5_CF1_ug/m3` = col_double(),
-                                         `PM2.5_ATM_ug/m3` = col_double(),
-                                         .default = col_skip())), .id="source") %>%
-  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/\\w+\\/", "")) #removes filepath name
-```
-
-
-```{r data deq} 
+```{r data_deq} 
 deq_raw <- read_csv("data/sel_subset/deq_full.csv", skip=3) %>%
   rename(date_time = X1,
          pm25 = `ug/m3(L)`) %>%
   select(date_time, pm25)
 ```
 
-
-```{r wrangling ap}
-ap_wrangled <- ap_raw %>%
-  rename(cf1 = `PM2.5_CF1_ug/m3`,
-         atm = `PM2.5_ATM_ug/m3`) %>%
-  mutate(created_at = as_datetime(created_at, tz = "UTC"), #converting from character to date time format; tz is in UTC
-         loc_tag = str_extract(source, "^[^\\(]+"), #grabbing location tag
-         loc_tag = str_replace(loc_tag, " B ", ""),
-         loc_tag = str_trim(loc_tag, side = "right"), #removing extra whitespace)
-         sensor = case_when(str_detect(source, " B \\(") ~ "B"),
-         sensor = replace_na(sensor, "A")) %>%
-  select(!c(source)) %>%
-  mutate(pst_new = with_tz(created_at, tz="Etc/GMT+8")) %>%
-  select(!c(loc_tag, created_at)) %>%
-  rename(date_time = pst_new) %>%
-  pivot_longer(cols = c(cf1,atm), names_to = "cf", values_to = "pm25") %>%
-  unite("cf_sensor", c(cf,sensor), sep="_", remove = FALSE) %>%
-  select(!c(sensor,cf))
-
+```{r wrangle_deq}
+deq_wrangled <- deq_raw %>%
+  mutate(date_time = as_datetime(date_time, format="%H:%M %m/%d/%Y", tz = "Etc/GMT+8")) %>% 
+         #cf_sensor = "deq") %>% 
+  mutate(date = date(date_time),
+         hour = hour(date_time))
 ```
 
-```{r epa_filter}
-temp_ap <- ap_raw %>% 
+
+```{r data_pa}
+laf_paths <- list.files(path = "data/sel_subset/sel_raw_full", full.names = TRUE)
+
+laf_raw <- laf_paths %>%
+  set_names() %>%
+  map_dfr(~read_csv(.x, col_types = cols(
+    source = col_character(),
+    created_at = col_character(),
+    `PM2.5_CF1_ug/m3` = col_double(),
+    `PM2.5_ATM_ug/m3` = col_double(),
+    `Temperature_F` = col_double(),
+    `Humidity_%` = col_double(),
+    .default = col_skip())),
+    .id="source"
+  ) %>% 
+  mutate(source = str_replace(source, ".\\w+\\/\\w+\\/\\w+\\/", "")) #removes filepath name
+```
+
+
+```{r wrangle_pa}
+laf_wrangled <- laf_raw %>% 
   rename(
+    temp = `Temperature_F`,
+    rh = `Humidity_%`,
     cf1 = `PM2.5_CF1_ug/m3`,
     atm = `PM2.5_ATM_ug/m3`
   ) %>% 
@@ -98,22 +92,175 @@ temp_ap <- ap_raw %>%
     date = date(pst_new),
     hour = hour(pst_new)
   )
+```
 
-# Testing 90% filter. Problem: all values in this df have >90% completion (i.e. mostly NAs)
-temp_ap %>% 
-  group_by(loc_tag, sensor, date, hour) %>% 
-  summarize(na_sum = sum(is.na(cf1)),
-            total = n()) %>% view()
+```{r epa_90, eval = FALSE}
+#Return to. NAs not reported for PM values in PA
+laf_epa <- laf_epa %>% 
+  pivot_longer(cols = c("cf1", "atm"), names_to = "measurement", values_to = "pm_value") %>% 
+  group_by(loc_tag, sensor, measurement, date) %>% 
+  summarize(
+    na_sum = sum(is.na(pm_value)),
+    total = n()
+  )
+  summarize(
+    na_sum = sum(is.na(cf1)),
+    total = n()
+  ) %>% 
+  mutate(
+    per = (na_sum/total)*100,
+    drop_90 = case_when(
+      per >= 90 ~ TRUE,
+      TRUE ~ FALSE #fills all others with false
+    )
+  ) %>%
+  filter(drop_90 == FALSE) %>% #filtering out data w more than 90% missing
+  select(!c(drop_90, na_sum, total, per))
+```
 
-temp_ap %>% 
-  select(!atm) %>% 
-  mutate(sensor = as.factor(sensor)) %>% 
-  group_by(loc_tag, date, hour, pst_new) %>% 
-  pivot_wider(names_from = sensor, values_from = cf1) #return to
-  
+```{r temp_rh_data}
+laf_geo <- laf_wrangled %>% 
+  group_by(date, hour) %>% 
+  summarize_at(c("rh", "temp"), mean, na.rm=TRUE)
+```
+
+
+```{r laf_uncorr}
+laf_uncorr <- laf_wrangled %>% 
+  rename(ab = sensor) %>% 
+  filter_at(c("cf1", "atm"), any_vars(. <1000)) %>% #filtering out max ranges
+  group_by(ab, date, hour) %>% 
+  summarize(uncorr = mean(cf1, na.rm=TRUE))
 ```
 
 ```{r epa_corr}
-# 2020 correction factor: PM_2.5 = 0.524 * (CF1 value of avg'd A&B) - 0.0852*RH + 5.72
+#laf_epa <- laf_epa %>% 
+laf_epa_corr <- laf_wrangled %>% 
+  rename(ab = sensor) %>% 
+  filter_at(c("cf1", "atm"), any_vars(. <1000)) %>% #filtering out max ranges
+  group_by(ab, date, hour) %>% 
+  summarize(cf1 = mean(cf1, na.rm=TRUE)) %>% 
+  pivot_wider(names_from = ab, values_from = cf1) %>% 
+  mutate(
+    diff = (A-B),
+    per_diff = 100*(abs(A-B))/((A+B)/2),
+    drop = case_when(
+      abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
+      TRUE ~ FALSE #fills all others with false
+    )
+  ) %>% 
+  filter(drop != TRUE) %>% 
+  select(!c(drop, diff, per_diff)) %>% 
+  pivot_longer(cols = c("A", "B"), names_to = "ab") %>%
+  left_join(laf_geo) %>% 
+  group_by(date, hour) %>% 
+  summarize(
+    cf1 = mean(value, na.rm = TRUE),
+    temp = mean(temp, na.rm = TRUE),
+    rh = mean(rh, na.rm = TRUE)
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    "epa_2020" = 0.524*cf1 - 0.0852*rh + 5.72,
+    "epa_2021" = case_when(
+      cf1 <= 343 ~ 0.52*cf1 - 0.086*rh + 5.75,
+      cf1 > 343 ~ 0.46*cf1 + (3.93*10^(-4))*(cf1^2) +2.97
+    )
+  )
+```
+
+```{r uniting_df}
+se_laf <- laf_epa_corr %>%
+  full_join(laf_uncorr) %>% 
+  full_join(deq_wrangled) %>% 
+  rename("deq" = pm25) %>% 
+  mutate(range = case_when(
+    date >= date_pre_start & date <= date_pre_end ~ "pre",
+    date >= date_fire_start & date <= date_fire_end ~ "fire",
+    date >= date_post_start & date <= date_post_end ~ "post",
+    date >= date_home_start & date <= date_home_end ~ "home"
+  )) %>% 
+  drop_na(range) %>% 
+  mutate(
+    range = factor(range, levels = c('pre', 'fire', 'post', 'home'))
+  )
+```
+
+```{r stat_function, eval = FALSE}
+# get_slope <- function(input_pa_var){
+#   se_laf %>% 
+#     group_by(range) %>% 
+#     summarize(output_equation = 
+#       paste(
+#       (get_regression_table(lm(deq~{{input_pa_var}})))$estimate[2],
+#       "\u00B1",
+#       (get_regression_table(lm(deq~{{input_pa_var}})))$std_error[2]
+#     ))
+# }
+# 
+# get_slope(cf1)
+
+# se_laf %>% 
+#   group_by(range) %>% 
+#   summarize_at(
+#     c("cf1", "epa_2020", "epa_2021"),
+#     paste(
+#       (get_regression_table(lm(deq~.)))$estimate[2],
+#       "\u00B1",
+#       (get_regression_table(lm(deq~.)))$std_error[2]
+#     )
+#   )
+```
+
+```{r slopes}
+se_laf_slopes <- se_laf %>% 
+  group_by(range) %>% 
+  summarize(
+    deq_uncorr = paste((get_regression_table(lm(deq~uncorr)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~uncorr)))$std_error[2]),
+    deq_2020 = paste((get_regression_table(lm(deq~epa_2020)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~epa_2020)))$std_error[2]),
+    deq_2021 = paste((get_regression_table(lm(deq~epa_2021)))$estimate[2],"\u00B1",(get_regression_table(lm(deq~epa_2021)))$std_error[2])
+  ) %>% 
+  rename(
+    uncorr = deq_uncorr,
+    epa_2020 = deq_2020,
+    epa_2021 = deq_2021
+  )
+
+df_slopes <- as.data.frame(se_laf_slopes) %>% 
+  pivot_longer(cols=2:4, names_to = "pa_name", values_to = "slope")
+```
+
+
+```{r viz}
+facet_range <- c("pre" = "Pre (Sep01-Sep09)",
+                "fire" = "Fire (Sep10-Sep19)",
+                "post" = "Post (Sep20-Sep29)",
+                "home" = "Home (Oct27-Nov03)")
+
+facet_corr <- c(
+  "uncorr" = "Uncorrected",
+  "epa_2020" = "2020 correction",
+  "epa_2021" = "Summer 2020 correction"
+)
+
+lab_PM <- expression(paste("Comparison of PA and DEQ sensor values for PM2.5 (", mu, "g/m"^3*")"))
+
+se_laf %>% 
+  filter(range != "home") %>% 
+  pivot_longer(cols = c(uncorr, epa_2020, epa_2021), names_to = "pa_name", values_to = "pa_value") %>% 
+  mutate(pa_name = factor(pa_name, levels = c("uncorr", "epa_2020", "epa_2021"))) %>% 
+  ggplot(aes(x = pa_value, y = deq)) +
+  facet_grid(as.factor(pa_name)~as.factor(range), labeller = labeller(pa_name = facet_corr, range = facet_range)) +
+  geom_point(shape = 3, alpha=0.5) +
+  theme_igray() +
+  stat_smooth(method = lm) +
+  geom_text(data = df_slopes, aes(x = 600, y = 50, label = slope), color = "blue", size = 4) +
+  labs(
+    title = lab_PM,
+    subtitle = "Data from SE Laf. STAR lab PA sensor, and co-located DEQ sensor.",
+    caption = "Columns represent different time range subsets. Rows represent EPA correction factors",
+    x = "PA",
+    y = "DEQ"
+  )
 ```
 
