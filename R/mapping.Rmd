@@ -33,7 +33,7 @@ data_corr <- data_day %>%
     diff = (A-B),
     per_diff = 100*(abs(A-B))/((A+B)/2),
     drop = case_when(
-      diff >= 5 & per_diff >= 62 ~ TRUE,
+      abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
       TRUE ~ FALSE #fills all others with false
     )
   ) %>% 
