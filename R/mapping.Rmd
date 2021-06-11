@@ -17,7 +17,45 @@ library(viridis)
 data_day <- read.csv("data/wrangled_new/wrangled_day.csv")
 ```
 
-```{r corrections}
+```{r get_map, eval = FALSE}
+#
+lat_min <- 45.4
+#lat_max <- 45.65 #old val that would include the point in Vancouver
+lat_max <- 45.6
+long_min <- -122.854
+long_max <- -122.58
+
+
+pdx_box <- c(
+  bottom = lat_min,
+  top = lat_max,
+  left = long_min,
+  right = long_max
+)
+
+#avaialble maps: terrain, terrain-background, terrain-labels, terrain-lines, toner, toner-2010, toner-2011, toner-background, toner-hybrid, toner-labels, toner-lines, toner-lite, watercolor
+pdx_map <- get_stamenmap(
+  pdx_box,
+  maptype = "toner-lite",
+  zoom = 11
+)
+
+save(pdx_map, file = "data/maps/pdx_map.RData")
+```
+
+```{r date_range_inputs}
+# pre
+date_pre_start <- as.Date("2020-09-01")
+date_pre_end <- as.Date("2020-09-09")
+# during
+date_fire_start <- as.Date("2020-09-10")
+date_fire_end <- as.Date("2020-09-19")
+# post
+date_post_start <- as.Date("2020-09-20")
+date_post_end <- as.Date("2020-09-29")
+```
+
+```{r epa_wrangle}
 data_corr <- data_day %>% 
   filter(inout == "outside") %>% 
   rename(
@@ -55,46 +93,7 @@ data_corr <- data_day %>%
   filter(loc_tag != "Ogden84th") #removing Vancouver point
 ```
 
-```{r getting_map, eval = FALSE}
-#
-lat_min <- 45.4
-#lat_max <- 45.65 #old val that would include the point in Vancouver
-lat_max <- 45.6
-long_min <- -122.854
-long_max <- -122.58
-
-
-pdx_box <- c(
-  bottom = lat_min,
-  top = lat_max,
-  left = long_min,
-  right = long_max
-)
-
-#avaialble maps: terrain, terrain-background, terrain-labels, terrain-lines, toner, toner-2010, toner-2011, toner-background, toner-hybrid, toner-labels, toner-lines, toner-lite, watercolor
-pdx_map <- get_stamenmap(
-  pdx_box,
-  maptype = "toner-lite",
-  zoom = 11
-)
-
-save(pdx_map, file = "data/maps/pdx_map.RData")
-```
-
-```{r dates}
-# pre
-date_pre_start <- as.Date("2020-09-01")
-date_pre_end <- as.Date("2020-09-09")
-# during
-date_fire_start <- as.Date("2020-09-10")
-date_fire_end <- as.Date("2020-09-19")
-# post
-date_post_start <- as.Date("2020-09-20")
-date_post_end <- as.Date("2020-09-29")
-```
-
-
-```{r}
+```{r epa_date_range_wrangle}
 load("data/maps/pdx_map.RData")
 
 data_ranged <- data_corr %>% 
@@ -157,7 +156,7 @@ pdx_map %>%
   theme(legend.position = "bottom")
 ```
 
-```{r}
+```{r epa_corr_viz}
 data_ranged_long <- data_ranged %>% 
   pivot_longer(cols = c(cf1, epa_2020, epa_2021), names_to = "corr_factor", values_to = "pm_val") %>% 
   group_by(loc_tag, long, lat, range, corr_factor) %>% 
@@ -187,7 +186,5 @@ pdx_map %>%
 #having trouble w ggsave right now.. will do manually
 #ggsave(map_wildfire_epa, device = "png", path = "figures/map_wildfire_epa.png")
 ```
-
-
 
 
