@@ -14,7 +14,8 @@ library(viridis)
 ```
 
 ```{r data_loading}
-data_day <- read.csv("data/wrangled_new/wrangled_day.csv")
+data_day <- read.csv("data/wrangled_new/wrangled_day.csv") %>% 
+  filter(loc_tag != "Ogden84th") #filtering out the Vancouver data point
 ```
 
 ```{r get_map, eval = FALSE}
@@ -53,7 +54,148 @@ date_fire_end <- as.Date("2020-09-19")
 # post
 date_post_start <- as.Date("2020-09-20")
 date_post_end <- as.Date("2020-09-29")
+
+#names
+facet_range <- c(
+  "pre" = "Pre (Sep01-Sep09)",
+  "fire" = "Fire (Sep10-Sep19)",
+  "post" = "Post (Sep20-Sep29)"
+)
 ```
+
+```{r fire_map}
+data_fire <- data_day %>% 
+#data_day %>% 
+  select(loc_tag, inout, ab, long, lat, date, `PM2.5_ATM_ug.m3`, `PM2.5_CF1_ug.m3`) %>% 
+  rename(
+    outside = `PM2.5_ATM_ug.m3`,
+    inside = `PM2.5_CF1_ug.m3`
+  ) %>% 
+  pivot_longer(cols = c(outside, inside), names_to = "pm25_cat", values_to = "pm25") %>% 
+  filter(inout == pm25_cat) %>% 
+  select(!pm25_cat) %>% 
+  filter(!(pm25 >= 1000)) %>% 
+  group_by(loc_tag, inout, long, lat, date) %>% 
+  summarise(pm_val = mean(pm25, na.rm = TRUE)) %>% 
+  mutate(
+    inout = factor(inout, levels = c("outside", "inside")),
+    range = case_when(
+      date >= date_pre_start & date <= date_pre_end ~ "pre",
+      date >= date_fire_start & date <= date_fire_end ~ "fire",
+      date >= date_post_start & date <= date_post_end ~ "post"
+    ),
+    range = factor(range, levels = c("pre", "fire", "post"))
+  ) %>% 
+  drop_na(range) %>% 
+  group_by(loc_tag, inout, long, lat, range) %>% 
+  summarize(pm_val = mean(pm_val, na.rm=TRUE)) %>% 
+  mutate(
+    pm_val_round = round(pm_val),
+    aqi = factor(case_when(
+      pm_val_round <= 50 ~ "Good",
+      pm_val_round >= 51 & pm_val_round <= 100 ~ "Moderate",
+      pm_val_round >= 101 & pm_val_round <= 150 ~ "Unhealthy for sensitive groups",
+      pm_val_round >= 151 & pm_val_round <= 200 ~ "Unhealthy",
+      pm_val_round >= 201 & pm_val_round <= 300 ~ "Very unhealthy",
+      pm_val_round >= 301 ~ "Hazardous"
+      ),
+      levels = c("Good", "Moderate", "Unhealthy for sensitive groups", "Unhealthy", "Very unhealthy", "Hazardous")
+    # ),
+    # aqi_color = as.character(
+    #   fct_recode(aqi, !!!(c(
+    #     "green" = "Good",
+    #     "yellow" = "Moderate",
+    #     "orange" = "Unhealthy for sensitive groups",
+    #     "red" = "Unhealthy",
+    #     "purple" = "Very unhealthy",
+    #     "maroon" = "Hazardous"
+    #   )))
+    )
+  )
+
+load("data/maps/pdx_map.RData")
+
+# pdx_map %>% 
+#   ggmap() +
+#   facet_grid(
+#     inout~range,
+#     labeller = labeller(range = facet_range)
+#   ) +
+#   geom_point(
+#     data = data_fire,
+#     aes(x = long, y = lat, color = pm_val, size = pm_val),
+#     inherit.aes = FALSE
+#   ) +
+#   scale_color_viridis(
+#     option = "mako",
+#     direction = -1,
+#     end = 0.85
+#   ) +
+#   labs(
+#     title = "Map of PM2.5 values in PDX",
+#     color = "PM2.5 (µg/m^3): "
+#   ) +
+#   theme_void() +
+#   theme(
+#     legend.position = "top",
+#     plot.background = element_rect(fill = "darkgray")
+#   )
+
+my_breaks <- seq(0, 350, by = 50)
+lab_PM <- expression(paste("Average reported PM"[2.5]*" (", mu, "g/m"^3*") values in Portland in September 2020"))
+
+pdx_map %>% 
+  ggmap() +
+  facet_wrap(
+    ~range,
+    labeller = labeller(range = facet_range)
+  ) +
+  geom_point(
+    data = data_fire,
+    color = "black",
+    alpha = 0.8,
+    aes(x = long, y = lat, shape = inout,
+        #color = aqi,
+        fill = pm_val, size = pm_val),
+    inherit.aes = FALSE
+  ) +
+  scale_shape_manual(
+    values = c(
+      "outside" = 21,
+      "inside" = 23
+    )
+  ) +
+  scale_fill_viridis(
+    # option = "mako",
+    option = "viridis",
+    direction = -1,
+    end = 0.85,
+    breaks = my_breaks
+  ) +
+  scale_size_continuous(breaks = my_breaks) +
+  #scale_color_manual(values = c("#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97", "#7e0023")) +
+  guides(
+    # fill = guide_legend(),
+    size = FALSE,
+    fill = guide_colorbar(barwidth=10)
+  ) +
+  theme_void() + 
+  theme(
+    legend.position = "top",
+    legend.box = "vertical",
+    plot.background = element_rect(fill = "darkgray")
+  ) +
+  labs(
+    title = lab_PM,
+    subtitle = "Data from PurpleAir",
+    fill = "PM2.5 (µg/m^3): ",
+    size = "PM2.5 (µg/m^3): ",
+    #color = "AQI category: ",
+    shape = "Sensor location: ",
+    caption = "Outdoor sensor data from PA's ATM reported results, and indoor from CF1."
+  )
+```
+
 
 ```{r epa_wrangle}
 data_corr <- data_day %>% 
@@ -90,13 +232,6 @@ data_corr <- data_day %>%
       cf1 > 343 ~ 0.46*cf1 + (3.93*10^(-4))*(cf1^2) +2.97
     )
   ) %>% 
-  filter(loc_tag != "Ogden84th") #removing Vancouver point
-```
-
-```{r epa_date_range_wrangle}
-load("data/maps/pdx_map.RData")
-
-data_ranged <- data_corr %>% 
   mutate(
     range = case_when(
       date >= date_pre_start & date <= date_pre_end ~ "pre",
@@ -107,11 +242,13 @@ data_ranged <- data_corr %>%
   ) %>% 
   drop_na(range) %>% 
   group_by(loc_tag, long, lat, range)
+```
 
-# data_cf1 <- data_ranged %>% 
+```{r function_attempts, eval=FALSE}
+# data_cf1 <- data_corr %>% 
 #   summarize(mean = mean(cf1))
 # 
-# data_epa20 <- data_ranged %>% 
+# data_epa20 <- data_corr %>% 
 #   summarize(mean = mean(epa_2020))
 # 
 # data_epa21 <- data_range %>% 
@@ -126,7 +263,7 @@ data_ranged <- data_corr %>%
 #   )
 
 map_aq <- function(pm25_input, range_input) {
-  data_filtered <- data_ranged %>% 
+  data_filtered <- data_corr %>% 
     filter(range == {{range_input}}) %>% 
     summarize(mean = mean({{pm25_input}})) %>% 
     ungroup()
@@ -148,7 +285,7 @@ pdx_map %>%
   ggmap() +
   facet_wrap(~range) +
   geom_point(
-    data = data_ranged,
+    data = data_corr,
     aes(x = long, y = lat, color = cf1),
     inherit.aes = FALSE
   ) +
@@ -157,7 +294,9 @@ pdx_map %>%
 ```
 
 ```{r epa_corr_viz}
-data_ranged_long <- data_ranged %>% 
+load("data/maps/pdx_map.RData")
+
+data_corr_long <- data_corr %>% 
   pivot_longer(cols = c(cf1, epa_2020, epa_2021), names_to = "corr_factor", values_to = "pm_val") %>% 
   group_by(loc_tag, long, lat, range, corr_factor) %>% 
   summarise_at(c("temp", "rh", "pm_val"), mean, na.rm = TRUE)
@@ -167,7 +306,7 @@ pdx_map %>%
   ggmap() +
   facet_grid(corr_factor~range) +
   geom_point(
-    data = data_ranged_long,
+    data = data_corr_long,
     aes(x = long, y = lat, color = pm_val),
     inherit.aes = FALSE
   ) +
