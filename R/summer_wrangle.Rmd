@@ -1,5 +1,5 @@
 ---
-title: "new_wrangle"
+title: "summer_wrangle"
 author: "Gillian McGinnis"
 date: "6/11/2021"
 output: pdf_document
@@ -9,7 +9,6 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
-library(lubridate)
 library(data.table)
 ```
 
@@ -28,71 +27,25 @@ input_selects <- c("date_time",
                    "temp",
                    "rh")
 
-input_selects <- c(
-  "date_time"
-)
-
-remove(temp_primary)
-data_primary <- data.frame(NA)
-
 file_list <- list.files(path = input_path,
                         #pattern = "STAR.+Primary",
-                        pattern = ".*STAR.*",
+                        #pattern = ".*STAR.*",
                         full.names = TRUE)
 ```
 
 
-```{r small_testing}
-fread(input_file,
-                  sep = ",",
-                  drop = input_skips,
-                  fill = TRUE
-  ) %>% 
-  plyr::rename(
-    warn_missing = FALSE,
-    c(
-      "created_at" = "date_time",
-      "PM1.0_CF1_ug/m3" = "pm1_cf1",
-      "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
-      "PM10.0_CF1_ug/m3" = "pm10_cf1",
-      "UptimeMinutes" = "uptime_min",
-      "RSSI_dbm" = "rssi_dbm",
-      "Temperature_F" = "temp",
-      "Humidity_%" = "rh",
-      "PM2.5_ATM_ug/m3" = "pm2.5_atm"
-    )
-  ) %>%
-  select(input_selects) %>%
-  mutate(
-    date_time_utc = as.POSIXct(date_time, tz = "UTC"),
-    date_time = with_tz(date_time_utc, "America/Los_Angeles")
-  ) %>% 
-  select(!date_time_utc) %>% 
-  mutate(
-    source = input_file,
-    loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
-    loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
-    loc_ab = str_extract(source, "B(?= \\((outside|inside|undefined))"),
-    loc_ab = replace_na(loc_ab, "A"),
-    loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
-    lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
-    long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
-  ) %>% 
-  select(!c(source, loc_path)) %>% 
-  group_by(loc_tag) %>% 
-  fill(loc_inout) %>% 
-  mutate(
-    loc_ab = factor(loc_ab, levels = c("A", "B")),
-    loc_inout = factor(loc_inout, levels = c("outside", "inside")),
-    lat = as.numeric(lat),
-    long = as.numeric(long)
-  )
-```
-
 ```{r for_loop}
+remove(temp_primary_a)
+remove(data_primary_a)
+remove(file_single)
+data_primary_a <- data.frame(NA)
+
 for(file_single in file_list){
-  if(str_detect(file_single, "\\) Primary") == TRUE){
-    temp_primary <- fread(file_single,
+  if(
+    str_detect(file_single, "\\) Primary") == TRUE &
+    str_detect(file_single, "B(?= \\((outside|inside|undefined))") == FALSE
+  ){
+    temp_primary_a <- fread(file_single,
                           sep = ",",
                           drop = input_skips,
                           fill = TRUE) %>% 
@@ -109,10 +62,10 @@ for(file_single in file_list){
                        "PM2.5_ATM_ug/m3" = "pm2.5_atm"
                        )
         ) %>% 
-      select(input_selects) %>%
+      select(all_of(input_selects)) %>%
       mutate(
         date_time_utc = as.POSIXct(date_time, tz = "UTC"),
-        date_time = with_tz(date_time_utc, "America/Los_Angeles")
+        date_time = lubridate::with_tz(date_time_utc, "America/Los_Angeles")
       ) %>% 
       select(!date_time_utc) %>% 
       mutate(
@@ -135,10 +88,57 @@ for(file_single in file_list){
         long = as.numeric(long)
       )
     
-    data_primary <- plyr::rbind.fill(data_primary, temp_primary)
+    data_primary_a <- plyr::rbind.fill(data_primary_a, temp_primary_a)
   }
 }
   
+```
+
+```{r small_testing}
+fread(input_file,
+                  sep = ",",
+                  drop = input_skips,
+                  fill = TRUE
+  ) %>% 
+  plyr::rename(
+    warn_missing = FALSE,
+    c(
+      "created_at" = "date_time",
+      "PM1.0_CF1_ug/m3" = "pm1_cf1",
+      "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
+      "PM10.0_CF1_ug/m3" = "pm10_cf1",
+      "UptimeMinutes" = "uptime_min",
+      "RSSI_dbm" = "rssi_dbm",
+      "Temperature_F" = "temp",
+      "Humidity_%" = "rh",
+      "PM2.5_ATM_ug/m3" = "pm2.5_atm"
+    )
+  ) %>%
+  select(all_of(input_selects)) %>%
+  mutate(
+    date_time_utc = as.POSIXct(date_time, tz = "UTC"),
+    date_time = lubridate::with_tz(date_time_utc, "America/Los_Angeles")
+  ) %>% 
+  select(!date_time_utc) %>% 
+  mutate(
+    source = input_file,
+    loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
+    loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
+    loc_ab = str_extract(source, "B(?= \\((outside|inside|undefined))"),
+    loc_ab = replace_na(loc_ab, "A"),
+    loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
+    lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
+    long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
+  ) %>% 
+  select(!c(source, loc_path)) %>% 
+  group_by(loc_tag) %>% 
+  fill(loc_inout) %>% 
+  mutate(
+    loc_ab = factor(loc_ab, levels = c("A", "B")),
+    loc_inout = factor(loc_inout, levels = c("outside", "inside")),
+    lat = as.numeric(lat),
+    long = as.numeric(long)
+  )
 ```
 
 ```{r, eval = FALSE}
