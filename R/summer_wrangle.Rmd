@@ -45,7 +45,11 @@ input_selects <- c(
   "pm2.5_cf1",
   "pm2.5_atm",
   "temp",
-  "rh"
+  "rh",
+  "pm1_cf1",
+  "pm1_atm",
+  "pm10_cf1",
+  "pm10_atm"
 )
 
 file_list <- list.files(path = input_path,
@@ -74,8 +78,72 @@ data_loc <- data.frame(source = file_list) %>%
   )
 ```
 
+```{r cleaning_function}
+clean_data <- function(input_file){
+  fread(input_file,
+        sep = ",",
+        drop = input_skips,
+        fill = TRUE) %>% 
+    plyr::rename(warn_missing = FALSE, input_renames) %>% 
+    select(created_at, intersect(all_of(input_selects), names(.))) %>%
+    mutate(
+      created_at_utc = as.POSIXct(created_at, tz = "UTC"),
+      created_at = lubridate::with_tz(created_at_utc, "America/Los_Angeles")
+    ) %>% 
+    select(!created_at_utc) %>% 
+    mutate(
+      source = input_file,
+      loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
+      loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
+      loc_tag = str_replace(loc_tag, " B$", ""),
+      loc_ab = str_extract(source, "B(?= \\((outside|inside|undefined))"),
+      loc_ab = replace_na(loc_ab, "A"),
+      loc_ab = factor(loc_ab, levels = c("A", "B"))
+    ) %>% 
+    select(!c(source, loc_path)) %>% 
+    plyr::rename(warn_missing = FALSE, input_rename_timestamp)
+}
+```
 
-```{r primary_loop}
+```{r for_loop_function}
+remove(
+  file_single,
+  data_primary, temp_primary,
+  data_secondary, temp_secondary
+)
+
+data_primary <- data.frame(NA)
+data_secondary <- data.frame(NA)
+
+
+for(file_single in file_list){
+  
+  if(str_detect(file_single, "\\) Primary") == TRUE){
+    temp_primary <- clean_data(file_single)
+    
+    data_primary <- plyr::rbind.fill(data_primary, temp_primary) %>% 
+      select(!intersect("NA.", names(.))) %>% 
+      drop_na(loc_tag)
+    
+    remove(temp_primary)
+  }
+  
+  if(str_detect(file_single, "\\) Secondary") == TRUE){
+    temp_secondary <- clean_data(file_single)
+    
+    data_secondary <- plyr::rbind.fill(data_secondary, temp_secondary) %>% 
+      select(!intersect("NA.", names(.))) %>% 
+      drop_na(loc_tag)
+    
+    remove(temp_secondary)
+  }
+  
+  remove(file_single)
+}
+```
+
+
+```{r old_loop}
 remove(
   file_single,
   data_primary, temp_primary,
