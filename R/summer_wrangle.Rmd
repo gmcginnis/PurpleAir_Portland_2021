@@ -12,18 +12,21 @@ library(tidyverse)
 library(data.table)
 ```
 
-```{r inputs}
-# REQUIRED
+```{r manual_inputs}
+# REQUIRED; path to CSV files of interest
 input_path <- "data/raw"
 
-# Input: list of (ORIGINAL name) variables to skip when reading file
+#OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Null otherwise
+input_path_filter <- NULL
+
+# REQUIRED; list of (ORIGINAL name) variables to skip when reading file
 input_skips <- c(
   "entry_id",
   "UptimeMinutes",
   "V11" #Auto added by fread b/c of how the CSVs are stored
 )
 
-# OPTIONAL. Do NOT rename the timestamp variable here
+# OPTIONAL. caveat: do NOT rename the timestamp variable here
 input_renames <- c(
   "PM1.0_CF1_ug/m3" = "pm1_cf1",
   "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
@@ -52,10 +55,15 @@ input_selects <- c(
   "pm10_atm"
 )
 
+#
+## Not an input, but is to be run prior to iterations:
 file_list <- list.files(path = input_path,
-                        pattern = ".*STAR.*",
+                        pattern = input_path_filter,
                         full.names = TRUE)
+##
+#
 ```
+
 
 ```{r loc_index}
 # Input: list of files in path
@@ -146,146 +154,5 @@ for(file_single in file_list){
   }
   
   remove(file_single)
-}
-```
-
-
-```{r old_loop, eval = FALSE}
-remove(
-  file_single,
-  data_primary, temp_primary,
-  data_secondary, temp_secondary
-)
-
-data_primary <- data.frame(NA)
-data_secondary <- data.frame(NA)
-
-for(file_single in file_list){
-  if(str_detect(file_single, "\\) Primary") == TRUE){
-    temp_primary <- fread(file_single,
-                          sep = ",",
-                          drop = input_skips,
-                          fill = TRUE) %>% 
-        plyr::rename(warn_missing = FALSE, input_renames) %>% 
-      select(created_at, intersect(all_of(input_selects), names(.))) %>%
-      mutate(
-        created_at_utc = as.POSIXct(created_at, tz = "UTC"),
-        created_at = lubridate::with_tz(created_at_utc, "America/Los_Angeles")
-      ) %>% 
-      select(!created_at_utc) %>% 
-      mutate(
-        source = file_single,
-        loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
-        loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
-        loc_tag = str_replace(loc_tag, " B$", ""),
-        loc_ab = str_extract(source, "B(?= \\((outside|inside|undefined))"),
-        loc_ab = replace_na(loc_ab, "A"),
-        loc_ab = factor(loc_ab, levels = c("A", "B"))
-        #loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
-        #lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
-        #long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
-      ) %>% 
-      select(!c(source, loc_path)) %>% 
-      # group_by(loc_tag) %>%
-      # fill(loc_inout) %>%
-      # mutate(
-      #   #loc_inout = factor(loc_inout, levels = c("outside", "inside")),
-      #   ##loc_ab = factor(loc_ab, levels = c("A", "B")),
-      #   #lat = as.numeric(lat),
-      #   #long = as.numeric(long)
-      # ) %>% 
-      plyr::rename(warn_missing = FALSE, input_rename_timestamp)
-    
-    data_primary <- plyr::rbind.fill(data_primary, temp_primary)
-      # group_by(loc_tag) %>%
-      # fill(loc_inout)
-    
-    remove(temp_primary)
-  }
-  if(str_detect(file_single, "\\) Secondary") == TRUE){
-    temp_secondary <- data.frame("source" = file_single)
-    
-    data_secondary <- plyr::rbind.fill(data_secondary, temp_secondary)
-    
-    remove(temp_secondary)
-  }
-  remove(file_single)
-}
-
-
-```
-
-```{r small_testing, eval = FALSE}
-fread(input_file,
-                  sep = ",",
-                  drop = input_skips,
-                  fill = TRUE
-  ) %>% 
-  plyr::rename(
-    warn_missing = FALSE,
-    c(
-      "created_at" = "date_time",
-      "PM1.0_CF1_ug/m3" = "pm1_cf1",
-      "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
-      "PM10.0_CF1_ug/m3" = "pm10_cf1",
-      "UptimeMinutes" = "uptime_min",
-      "RSSI_dbm" = "rssi_dbm",
-      "Temperature_F" = "temp",
-      "Humidity_%" = "rh",
-      "PM2.5_ATM_ug/m3" = "pm2.5_atm"
-    )
-  ) %>%
-  select(all_of(input_selects)) %>%
-  mutate(
-    date_time_utc = as.POSIXct(date_time, tz = "UTC"),
-    date_time = lubridate::with_tz(date_time_utc, "America/Los_Angeles")
-  ) %>% 
-  select(!date_time_utc) %>% 
-  mutate(
-    source = input_file,
-    loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
-    loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
-    loc_ab = str_extract(source, "B(?= \\((outside|inside|undefined))"),
-    loc_ab = replace_na(loc_ab, "A"),
-    loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
-    lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
-    long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
-  ) %>% 
-  select(!c(source, loc_path)) %>% 
-  group_by(loc_tag) %>% 
-  fill(loc_inout) %>% 
-  mutate(
-    loc_ab = factor(loc_ab, levels = c("A", "B")),
-    loc_inout = factor(loc_inout, levels = c("outside", "inside")),
-    lat = as.numeric(lat),
-    long = as.numeric(long)
-  )
-```
-
-```{r, eval = FALSE}
-# https://www.r-bloggers.com/2011/06/merge-all-files-in-a-directory-using-r-into-a-single-dataframe/
-for (file in file_list){
-      
-  # if the merged dataset doesn't exist, create it
-  if (!exists("dataset")){
-    #dataset <- read.table(file, header=TRUE, sep="\t")
-    dataset <- fread(file,
-                  sep = ",",
-                  drop = input_skips,
-                  fill = TRUE
-  )
-  }
-  
-  # if the merged dataset does exist, append to it
-  if (exists("dataset")){
-    temp_dataset <-fread(file,
-                  sep = ",",
-                  drop = input_skips,
-                  fill = TRUE
-  )
-    dataset<-rbind(dataset, temp_dataset)
-    rm(temp_dataset)
-  }
-
 }
 ```
