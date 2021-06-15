@@ -92,24 +92,25 @@ for(file_single in file_list){
         loc_tag = str_replace(loc_tag, " B$", ""),
         loc_ab = str_extract(source, "B(?= \\((outside|inside|undefined))"),
         loc_ab = replace_na(loc_ab, "A"),
-        loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
-        lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
-        long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
+        loc_ab = factor(loc_ab, levels = c("A", "B"))
+        #loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
+        #lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
+        #long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
       ) %>% 
       select(!c(source, loc_path)) %>% 
       # group_by(loc_tag) %>%
       # fill(loc_inout) %>%
       mutate(
-        loc_inout = factor(loc_inout, levels = c("outside", "inside")),
-        loc_ab = factor(loc_ab, levels = c("A", "B")),
-        lat = as.numeric(lat),
-        long = as.numeric(long)
+        #loc_inout = factor(loc_inout, levels = c("outside", "inside")),
+        ##loc_ab = factor(loc_ab, levels = c("A", "B")),
+        #lat = as.numeric(lat),
+        #long = as.numeric(long)
       ) %>% 
       plyr::rename(warn_missing = FALSE, input_rename_timestamp)
     
-    data_primary <- plyr::rbind.fill(data_primary, temp_primary) %>% 
-      group_by(loc_tag) %>%
-      fill(loc_inout)
+    data_primary <- plyr::rbind.fill(data_primary, temp_primary)
+      # group_by(loc_tag) %>%
+      # fill(loc_inout)
   }
 }
 
