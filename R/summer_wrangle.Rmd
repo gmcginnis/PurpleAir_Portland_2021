@@ -58,6 +58,8 @@ file_list <- list.files(path = input_path,
 ```
 
 ```{r loc_index}
+# Input: list of files in path
+# Output: data frame with sensor tag, latitude, longitude, inside/outside
 data_loc <- data.frame(source = file_list) %>% 
   mutate(
     loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
@@ -79,6 +81,9 @@ data_loc <- data.frame(source = file_list) %>%
 ```
 
 ```{r cleaning_function}
+# Function purpose: read specific file by location, skipping columns as needed; extracting info from title
+# Input: One file path
+# Output: Data frame of input file with relevant info in columns
 clean_data <- function(input_file){
   fread(input_file,
         sep = ",",
@@ -106,6 +111,7 @@ clean_data <- function(input_file){
 ```
 
 ```{r for_loop_function}
+# Setup: cleaning environment
 remove(
   file_single,
   data_primary, temp_primary,
@@ -115,7 +121,8 @@ remove(
 data_primary <- data.frame(NA)
 data_secondary <- data.frame(NA)
 
-
+# Loop purpose: repeat file reading process for all files in a specified path
+# Output: Two data frames (one primary, one secondary)
 for(file_single in file_list){
   
   if(str_detect(file_single, "\\) Primary") == TRUE){
@@ -143,7 +150,7 @@ for(file_single in file_list){
 ```
 
 
-```{r old_loop}
+```{r old_loop, eval = FALSE}
 remove(
   file_single,
   data_primary, temp_primary,
@@ -208,7 +215,7 @@ for(file_single in file_list){
 
 ```
 
-```{r small_testing}
+```{r small_testing, eval = FALSE}
 fread(input_file,
                   sep = ",",
                   drop = input_skips,
