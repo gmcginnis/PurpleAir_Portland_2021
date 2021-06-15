@@ -13,65 +13,83 @@ library(data.table)
 ```
 
 ```{r inputs}
+# REQUIRED
 input_path <- "data/raw"
-input_file <- "data/raw/Bridlemile (outside) (45.493717 -122.716816) Primary Real Time 09_01_2020 11_30_2020.csv"
+
+# Input: list of (original name) variables to skip when reading file
 input_skips <- c("entry_id", "UptimeMinutes", "V11")
-# input_selects <- c("created_at",
-#                    "PM2.5_CF1_ug/m3",
-#                    "PM2.5_ATM_ug/m3",
-#                    "Temperature_F",
-#                    "Humidity_%")
-input_selects <- c("date_time",
-                   "pm2.5_cf1",
+
+# OPTIONAL. Do NOT rename the timestamp variable here
+input_renames <- c("PM1.0_CF1_ug/m3" = "pm1_cf1",
+                   "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
+                   "PM10.0_CF1_ug/m3" = "pm10_cf1",
+                   "UptimeMinutes" = "uptime_min",
+                   "RSSI_dbm" = "rssi_dbm",
+                   "Temperature_F" = "temp",
+                   "Humidity_%" = "rh",
+                   "PM2.5_ATM_ug/m3" = "pm2.5_atm")
+
+# OPTIONAL. Rename timestamp variable
+input_rename_timestamp <- c("created_at" = "date_time")
+
+# REQUIRED. List of renamed variables to keep (timestamp automatically kept)
+input_selects <- c("pm2.5_cf1",
                    "pm2.5_atm",
                    "temp",
                    "rh")
 
 file_list <- list.files(path = input_path,
-                        #pattern = "STAR.+Primary",
-                        #pattern = ".*STAR.*",
+                        pattern = ".*STAR.*",
                         full.names = TRUE)
 ```
 
+```{r loc_index}
+data_loc <- data.frame(source = file_list) %>% 
+  mutate(
+    loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
+    loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
+    loc_tag = str_replace(loc_tag, " B$", ""),
+    loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
+    lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
+    long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
+  ) %>% 
+  select(!c(source, loc_path)) %>% 
+  group_by(loc_tag) %>%
+  fill(loc_inout) %>%
+  unique() %>% 
+  mutate(
+    loc_inout = factor(loc_inout, levels = c("outside", "inside")),
+    lat = as.numeric(lat),
+    long = as.numeric(long)
+  )
+```
 
-```{r for_loop}
-remove(temp_primary_a)
-remove(data_primary_a)
-remove(file_single)
-data_primary_a <- data.frame(NA)
+
+```{r primary_loop}
+remove(data_primary, temp_primary, file_single)
+data_primary <- data.frame(NA)
 
 for(file_single in file_list){
   if(
-    str_detect(file_single, "\\) Primary") == TRUE &
-    str_detect(file_single, "B(?= \\((outside|inside|undefined))") == FALSE
+    #str_detect(file_single, "B(?= \\((outside|inside|undefined))") == FALSE &
+    str_detect(file_single, "\\) Primary") == TRUE
   ){
-    temp_primary_a <- fread(file_single,
+    temp_primary <- fread(file_single,
                           sep = ",",
                           drop = input_skips,
                           fill = TRUE) %>% 
-        plyr::rename(warn_missing = FALSE,
-                     c(
-                       "created_at" = "date_time",
-                       "PM1.0_CF1_ug/m3" = "pm1_cf1",
-                       "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
-                       "PM10.0_CF1_ug/m3" = "pm10_cf1",
-                       "UptimeMinutes" = "uptime_min",
-                       "RSSI_dbm" = "rssi_dbm",
-                       "Temperature_F" = "temp",
-                       "Humidity_%" = "rh",
-                       "PM2.5_ATM_ug/m3" = "pm2.5_atm"
-                       )
-        ) %>% 
-      select(all_of(input_selects)) %>%
+        plyr::rename(warn_missing = FALSE, input_renames) %>% 
+      select(created_at, intersect(all_of(input_selects), names(.))) %>%
       mutate(
-        date_time_utc = as.POSIXct(date_time, tz = "UTC"),
-        date_time = lubridate::with_tz(date_time_utc, "America/Los_Angeles")
+        created_at_utc = as.POSIXct(created_at, tz = "UTC"),
+        created_at = lubridate::with_tz(created_at_utc, "America/Los_Angeles")
       ) %>% 
-      select(!date_time_utc) %>% 
+      select(!created_at_utc) %>% 
       mutate(
         source = file_single,
         loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
         loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
+        loc_tag = str_replace(loc_tag, " B$", ""),
         loc_ab = str_extract(source, "B(?= \\((outside|inside|undefined))"),
         loc_ab = replace_na(loc_ab, "A"),
         loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
@@ -79,19 +97,23 @@ for(file_single in file_list){
         long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
       ) %>% 
       select(!c(source, loc_path)) %>% 
-      group_by(loc_tag) %>% 
-      fill(loc_inout) %>% 
+      # group_by(loc_tag) %>%
+      # fill(loc_inout) %>%
       mutate(
-        loc_ab = factor(loc_ab, levels = c("A", "B")),
         loc_inout = factor(loc_inout, levels = c("outside", "inside")),
+        loc_ab = factor(loc_ab, levels = c("A", "B")),
         lat = as.numeric(lat),
         long = as.numeric(long)
-      )
+      ) %>% 
+      plyr::rename(warn_missing = FALSE, input_rename_timestamp)
     
-    data_primary_a <- plyr::rbind.fill(data_primary_a, temp_primary_a)
+    data_primary <- plyr::rbind.fill(data_primary, temp_primary) %>% 
+      group_by(loc_tag) %>%
+      fill(loc_inout)
   }
 }
-  
+
+remove(temp_primary) 
 ```
 
 ```{r small_testing}
