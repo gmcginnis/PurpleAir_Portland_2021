@@ -16,27 +16,37 @@ library(data.table)
 # REQUIRED
 input_path <- "data/raw"
 
-# Input: list of (original name) variables to skip when reading file
-input_skips <- c("entry_id", "UptimeMinutes", "V11")
+# Input: list of (ORIGINAL name) variables to skip when reading file
+input_skips <- c(
+  "entry_id",
+  "UptimeMinutes",
+  "V11" #Auto added by fread b/c of how the CSVs are stored
+)
 
 # OPTIONAL. Do NOT rename the timestamp variable here
-input_renames <- c("PM1.0_CF1_ug/m3" = "pm1_cf1",
-                   "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
-                   "PM10.0_CF1_ug/m3" = "pm10_cf1",
-                   "UptimeMinutes" = "uptime_min",
-                   "RSSI_dbm" = "rssi_dbm",
-                   "Temperature_F" = "temp",
-                   "Humidity_%" = "rh",
-                   "PM2.5_ATM_ug/m3" = "pm2.5_atm")
+input_renames <- c(
+  "PM1.0_CF1_ug/m3" = "pm1_cf1",
+  "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
+  "PM10.0_CF1_ug/m3" = "pm10_cf1",
+  "UptimeMinutes" = "uptime_min",
+  "RSSI_dbm" = "rssi_dbm",
+  "Temperature_F" = "temp",
+  "Humidity_%" = "rh",
+  "PM1.0_ATM_ug/m" = "pm1_atm",
+  "PM2.5_ATM_ug/m3" = "pm2.5_atm",
+  "PM10_ATM_ug/m3" = "pm10_atm"
+)
 
 # OPTIONAL. Rename timestamp variable
 input_rename_timestamp <- c("created_at" = "date_time")
 
 # REQUIRED. List of renamed variables to keep (timestamp automatically kept)
-input_selects <- c("pm2.5_cf1",
-                   "pm2.5_atm",
-                   "temp",
-                   "rh")
+input_selects <- c(
+  "pm2.5_cf1",
+  "pm2.5_atm",
+  "temp",
+  "rh"
+)
 
 file_list <- list.files(path = input_path,
                         pattern = ".*STAR.*",
@@ -66,14 +76,17 @@ data_loc <- data.frame(source = file_list) %>%
 
 
 ```{r primary_loop}
-remove(data_primary, temp_primary, file_single)
+remove(
+  file_single,
+  data_primary, temp_primary,
+  data_secondary, temp_secondary
+)
+
 data_primary <- data.frame(NA)
+data_secondary <- data.frame(NA)
 
 for(file_single in file_list){
-  if(
-    #str_detect(file_single, "B(?= \\((outside|inside|undefined))") == FALSE &
-    str_detect(file_single, "\\) Primary") == TRUE
-  ){
+  if(str_detect(file_single, "\\) Primary") == TRUE){
     temp_primary <- fread(file_single,
                           sep = ",",
                           drop = input_skips,
@@ -100,21 +113,31 @@ for(file_single in file_list){
       select(!c(source, loc_path)) %>% 
       # group_by(loc_tag) %>%
       # fill(loc_inout) %>%
-      mutate(
-        #loc_inout = factor(loc_inout, levels = c("outside", "inside")),
-        ##loc_ab = factor(loc_ab, levels = c("A", "B")),
-        #lat = as.numeric(lat),
-        #long = as.numeric(long)
-      ) %>% 
+      # mutate(
+      #   #loc_inout = factor(loc_inout, levels = c("outside", "inside")),
+      #   ##loc_ab = factor(loc_ab, levels = c("A", "B")),
+      #   #lat = as.numeric(lat),
+      #   #long = as.numeric(long)
+      # ) %>% 
       plyr::rename(warn_missing = FALSE, input_rename_timestamp)
     
     data_primary <- plyr::rbind.fill(data_primary, temp_primary)
       # group_by(loc_tag) %>%
       # fill(loc_inout)
+    
+    remove(temp_primary)
   }
+  if(str_detect(file_single, "\\) Secondary") == TRUE){
+    temp_secondary <- data.frame("source" = file_single)
+    
+    data_secondary <- plyr::rbind.fill(data_secondary, temp_secondary)
+    
+    remove(temp_secondary)
+  }
+  remove(file_single)
 }
 
-remove(temp_primary) 
+
 ```
 
 ```{r small_testing}
