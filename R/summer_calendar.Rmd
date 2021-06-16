@@ -14,7 +14,14 @@ library(ggmap)
 library(openair)
 ```
 
-```{r}
+```{r aqi}
+aqi_breaks <- c(0, 50, 100, 150, 200, 300, 500)
+aqi_labels <- c("Good", "Moderate", "Unhealthy for sensitive groups", "Unhealthy", "Very unhealthy", "Hazardous")
+aqi_colors <- c("#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97", "#7e0023")
+```
+
+
+```{r wrangle}
 data_pm2.5_atm <- data_primary %>% 
   filter_at(c("pm2.5_cf1", "pm2.5_atm"), any_vars(. <1000)) %>% 
   select(loc_tag, loc_ab, date_time, pm2.5_atm) %>% 
@@ -23,11 +30,13 @@ data_pm2.5_atm <- data_primary %>%
 data_pm2.5_atm_avg <- data_pm2.5_atm %>% 
   group_by(date) %>%
   summarize(pm2.5_atm = mean(pm2.5_atm, na.rm=TRUE))
+```
 
+```{r plot}
 calendarPlot(data_pm2.5_atm_avg,
              pollutant = "pm2.5_atm",
-             breaks = c(0, 50, 100, 150, 200, 300, 500),
-             labels = c("Good", "Mod", "USG", "Unh", "V Unh", "Haz"),
-             cols = c("#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97", "#7e0023"))
+             breaks = aqi_breaks,
+             labels = aqi_labels,
+             cols = aqi_colors)
 ```
 
