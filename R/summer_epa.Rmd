@@ -1,0 +1,73 @@
+---
+title: "summer_epa"
+author: "Gillian McGinnis"
+date: "6/16/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(PWFSLSmoke)
+```
+
+```{r}
+head(data_primary)
+
+data_subset <- data_primary %>% 
+  #filter(loc_tag == "PSU STAR Lab Edgewater") %>% 
+  mutate(
+    date = date(date_time),
+    hour = hour(date_time)
+  )
+
+data_geo <- data_subset %>% 
+  group_by(loc_tag, date) %>% 
+  summarize_at(c("temp", "rh"), mean, na.rm = TRUE)
+
+
+data_corr <- data_subset %>% 
+#data_subset %>% 
+  filter(pm2.5_cf1 <1000) %>% #filtering out max ranges
+  group_by(loc_tag, loc_ab, date) %>% 
+  summarize(pm2.5_cf1 = mean(pm2.5_cf1, na.rm=TRUE)) %>% 
+  pivot_wider(names_from = loc_ab, values_from = pm2.5_cf1) %>% 
+  mutate(
+    diff = (A-B),
+    per_diff = 100*(abs(A-B))/((A+B)/2),
+    drop = case_when(
+      abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
+      TRUE ~ FALSE #fills all others with false
+    )
+  ) %>% 
+  filter(drop != TRUE) %>% 
+  select(!c(drop, diff, per_diff)) %>% 
+  pivot_longer(cols = c("A", "B"), names_to = "loc_ab") %>%
+  mutate(loc_ab = factor(loc_ab, levels = c("A", "B"))) %>% 
+  left_join(data_geo) %>% 
+  group_by(loc_tag, date) %>% 
+  summarize(
+    cf1 = mean(value, na.rm = TRUE),
+    temp = mean(temp, na.rm = TRUE),
+    rh = mean(rh, na.rm = TRUE)
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    "epa_2020" = 0.524*cf1 - 0.0852*rh + 5.72,
+    "epa_2021" = case_when(
+      cf1 <= 343 ~ 0.52*cf1 - 0.086*rh + 5.75,
+      cf1 > 343 ~ 0.46*cf1 + (3.93*10^(-4))*(cf1^2) +2.97
+    )
+  )
+
+data_corr %>% 
+  filter(loc_tag != "Ogden84th") %>% 
+  filter(date >= as.Date("2020-09-10") & date <= as.Date("2020-09-19")) %>% 
+  left_join(data_loc) %>% 
+  ggplot(aes(x = long, y = lat, size = epa_2021, color = epa_2021)) +
+  facet_wrap(~date) +
+  geom_point() +
+  viridis::scale_color_viridis(option="mako", direction=-1, end = 0.85)
+```
+
