@@ -10,14 +10,19 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(data.table)
+library(lubridate)
 ```
 
 ```{r manual_inputs}
 # REQUIRED; path to CSV files of interest
 input_path <- "data/raw"
 
-#OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Null otherwise
+#OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Use NULL otherwise
 input_path_filter <- NULL
+
+# REQUIRED: choose to load primary and/or secondary data
+input_read_primary <- TRUE
+input_read_secondary <- FALSE
 
 # REQUIRED; list of (ORIGINAL name) variables to skip when reading file
 input_skips <- c(
@@ -26,7 +31,7 @@ input_skips <- c(
   "V11" #Auto added by fread b/c of how the CSVs are stored
 )
 
-# OPTIONAL. caveat: do NOT rename the timestamp variable here
+# OPTIONAL. Use format of "Original name" = "new_name". Caveat: do NOT rename the timestamp variable here
 input_renames <- c(
   "PM1.0_CF1_ug/m3" = "pm1_cf1",
   "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
@@ -40,7 +45,7 @@ input_renames <- c(
   "PM10_ATM_ug/m3" = "pm10_atm"
 )
 
-# OPTIONAL. Rename timestamp variable
+# OPTIONAL. Use format of "created_at" = "new_name". Rename timestamp variable
 input_rename_timestamp <- c("created_at" = "date_time")
 
 # REQUIRED. List of renamed variables to keep (timestamp automatically kept)
@@ -48,11 +53,12 @@ input_selects <- c(
   "pm2.5_cf1",
   "pm2.5_atm",
   "temp",
-  "rh",
-  "pm1_cf1",
-  "pm1_atm",
-  "pm10_cf1",
-  "pm10_atm"
+  "rh"
+  # "rh",
+  # "pm1_cf1",
+  # "pm1_atm",
+  # "pm10_cf1",
+  # "pm10_atm"
 )
 
 #
@@ -130,10 +136,13 @@ data_primary <- data.frame(NA)
 data_secondary <- data.frame(NA)
 
 # Loop purpose: repeat file reading process for all files in a specified path
-# Output: Two data frames (one primary, one secondary)
+# Output: data frames (one primary, one secondary)
 for(file_single in file_list){
   
-  if(str_detect(file_single, "\\) Primary") == TRUE){
+  if(
+    input_read_primary == TRUE &
+    str_detect(file_single, "\\) Primary") == TRUE
+    ){
     temp_primary <- clean_data(file_single)
     
     data_primary <- plyr::rbind.fill(data_primary, temp_primary) %>% 
@@ -143,7 +152,10 @@ for(file_single in file_list){
     remove(temp_primary)
   }
   
-  if(str_detect(file_single, "\\) Secondary") == TRUE){
+  if(
+    input_read_secondary == TRUE &
+    str_detect(file_single, "\\) Secondary") == TRUE
+    ){
     temp_secondary <- clean_data(file_single)
     
     data_secondary <- plyr::rbind.fill(data_secondary, temp_secondary) %>% 
