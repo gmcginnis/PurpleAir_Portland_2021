@@ -92,7 +92,7 @@ data_daily %>%
   ) +
   theme(legend.position = "bottom")
 
-ggsave("figures/summer_se_laf.png")
+ggsave("figures/summer_se_laf_timeseries.png")
 ```
 
 ```{r}
@@ -100,9 +100,9 @@ data_daily %>%
   pivot_longer(cols = c(cf1, epa_2020, epa_2021), names_to = "corr", values_to = "pa") %>% 
   rename("deq" = "pm2.5_deq") %>% 
   ggplot(aes(x = pa, y = deq, color = corr)) +
-  # facet_wrap(~range,
-  #            scales = "free",
-  #            labeller = as_labeller(facet_range)) +
+  facet_wrap(~range,
+             scales = "free",
+             labeller = as_labeller(facet_range)) +
   geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
   stat_smooth(method = "lm") +
   geom_point(shape = 1) +
@@ -113,6 +113,8 @@ data_daily %>%
     y = "DEQ measurement"
   ) +
   theme(legend.position = "bottom")
+
+ggsave("figures/summer_se_laf_fits.png")
 ```
 
 
