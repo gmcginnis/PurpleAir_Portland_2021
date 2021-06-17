@@ -24,7 +24,7 @@ data_subset <- data_primary %>%
 
 data_geo <- data_subset %>% 
   group_by(loc_tag, date) %>% 
-  summarize_at(c("temp", "rh"), mean, na.rm = TRUE)
+  summarize_at(c("temp_f", "rh"), mean, na.rm = TRUE)
 
 
 data_corr <- data_subset %>% 
@@ -49,7 +49,7 @@ data_corr <- data_subset %>%
   group_by(loc_tag, date) %>% 
   summarize(
     cf1 = mean(value, na.rm = TRUE),
-    temp = mean(temp, na.rm = TRUE),
+    temp_f = mean(temp_f, na.rm = TRUE),
     rh = mean(rh, na.rm = TRUE)
   ) %>% 
   ungroup() %>% 
