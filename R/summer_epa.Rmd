@@ -13,14 +13,23 @@ library(PWFSLSmoke)
 ```
 
 ```{r}
-head(data_primary)
-
-data_subset <- data_primary %>% 
-  #filter(loc_tag == "PSU STAR Lab Edgewater") %>% 
+data_drop_18 <- data_primary %>% 
   mutate(
     date = date(date_time),
     hour = hour(date_time)
-  )
+  ) %>% 
+  group_by(loc_tag, loc_ab, date, hour) %>% 
+  summarize(mean = mean(pm2.5_cf1, na.rm = TRUE)) %>% 
+  group_by(loc_tag, loc_ab, date) %>% 
+  count() %>% 
+  filter(n < 18)
+
+data_subset <- data_primary %>% 
+  mutate(
+    date = date(date_time),
+    hour = hour(date_time)
+  ) %>% 
+  anti_join(data_drop_18)
 
 data_geo <- data_subset %>% 
   group_by(loc_tag, date) %>% 
@@ -28,7 +37,6 @@ data_geo <- data_subset %>%
 
 
 data_corr <- data_subset %>% 
-#data_subset %>% 
   filter(pm2.5_cf1 <1000) %>% #filtering out max ranges
   group_by(loc_tag, loc_ab, date) %>% 
   summarize(pm2.5_cf1 = mean(pm2.5_cf1, na.rm=TRUE)) %>% 
@@ -78,6 +86,5 @@ data_corr %>%
 #   stat_smooth(alpha = 0.3) +
 #   geom_point(shape = 3)
 
-remove(data_subset)
+remove(data_drop_18, data_subset)
 ```
-
