@@ -1,0 +1,45 @@
+---
+title: "summer_aqi_who"
+author: "Gillian McGinnis"
+date: "6/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(con2aqi)
+
+input_path_filter <- "*STAR*"
+source(knitr::purl("R/summer_wrangle.Rmd"))
+file.remove("summer_wrangle.R")
+remove(data_secondary, file_list, clean_data, list = ls(pattern = "input_"))
+
+source(knitr::purl("R/summer_epa.Rmd"))
+file.remove("summer_epa.R")
+```
+
+```{r}
+
+data_corr %>% 
+  mutate(
+    aqi_cat = factor(case_when(
+      epa_2021 <= 12 ~ "Good",
+      epa_2021 >= 12.1 & epa_2021 <= 35.4 ~ "Moderate",
+      epa_2021 >= 35.5 & epa_2021 <= 55.4 ~ "Unhealthy for sensitive",
+      epa_2021 >= 55.5 & epa_2021 <= 150.4 ~ "Unhealthy",
+      epa_2021 >= 150.5 & epa_2021 <= 250.4 ~ "Very unhealthy",
+      epa_2021 >= 250.5 ~ "Hazardous"
+    ),
+    levels = c("Good", "Moderate", "Unhealthy for sensitive", "Unhealthy", "Very unhealthy", "Hazardous")),
+    who = case_when(epa_2021 >= 25 ~ TRUE,
+                    TRUE ~ FALSE)
+  ) %>% 
+  drop_na(aqi_cat) %>% 
+  ggplot(aes(x = date, y = epa_2021, shape = aqi_cat, color = loc_tag)) +
+  facet_wrap(~loc_tag) +
+  geom_hline(yintercept = 25) +
+  geom_line() +
+  geom_point()
+```
+
