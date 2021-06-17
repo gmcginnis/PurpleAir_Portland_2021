@@ -1,0 +1,82 @@
+---
+title: "summer_se_laf"
+author: "Gillian McGinnis"
+date: "6/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r run_scripts}
+input_path_filter <- "PSU STAR LAB SEL"
+source(knitr::purl("R/summer_wrangle.Rmd"))
+remove(data_secondary, file_list, clean_data, list = ls(pattern = "input_"))
+
+input_deq_path <- "data/deq/Portland SE Lafayette.xlsx"
+source(knitr::purl("R/summer_deq.Rmd"))
+remove(data_deq_raw, data_deq_names, deq_path, list = ls(pattern = "input_"))
+
+source(knitr::purl("R/summer_epa.Rmd"))
+```
+
+```{r date_range_inputs}
+# pre
+date_pre_start <- as.Date("2020-09-01")
+date_pre_end <- as.Date("2020-09-09")
+# during
+date_fire_start <- as.Date("2020-09-10")
+date_fire_end <- as.Date("2020-09-19")
+# post
+date_post_start <- as.Date("2020-09-20")
+date_post_end <- as.Date("2020-09-29")
+
+#names
+facet_range <- c(
+  "pre" = "Pre (Sep01-Sep09)",
+  "fire" = "Fire (Sep10-Sep19)",
+  "post" = "Post (Sep20-Sep29)"
+)
+```
+
+
+```{r}
+data_deq_daily <- data_deq_wrangled %>% 
+  mutate(date = date(date_time)) %>% 
+  select(!date_time) %>% 
+  group_by(date) %>% 
+  summarize_all(mean, na.rm=TRUE)
+
+data_corr %>% 
+  left_join(data_deq_daily, by = c("date")) %>% 
+  select(date, cf1, epa_2020, epa_2021, pm2.5_deq) %>% 
+  pivot_longer(cols = c(!date)) %>% 
+  mutate(
+    name = factor(name,
+                  levels = c("cf1", "epa_2020", "epa_2021", "pm2.5_deq"),
+                  labels = c("Raw PA", "PA EPA '20", "PA EPA '21", "DEQ")),
+    source = fct_collapse(name,
+                          "PA" = c("Raw PA", "PA EPA '20", "PA EPA '21"),
+                          "DEQ" = "DEQ"),
+    range = case_when(
+      date >= date_pre_start & date <= date_pre_end ~ "pre",
+      date >= date_fire_start & date <= date_fire_end ~ "fire",
+      date >= date_post_start & date <= date_post_end ~ "post"
+    ),
+    range = factor(range, levels = c("pre", "fire", "post"))
+  ) %>% 
+  drop_na(range) %>% 
+  ggplot(aes(x = date, y = value, color = name, shape = source, linetype = source)) +
+  facet_wrap(~range,
+             scales = "free",
+             labeller = as_labeller(facet_range)) +
+  geom_point() +
+  geom_path() +
+  labs(
+    title = "PM2.5 values",
+    color = "Data: "
+  ) +
+  theme(legend.position = "bottom")
+```
+
