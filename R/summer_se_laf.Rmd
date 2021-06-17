@@ -7,6 +7,8 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(openair)
 ```
 
 ```{r run_scripts}
@@ -51,17 +53,10 @@ data_deq_daily <- data_deq_wrangled %>%
   group_by(date) %>% 
   summarize_all(mean, na.rm=TRUE)
 
-data_corr %>% 
+data_daily <- data_corr %>% 
   left_join(data_deq_daily, by = c("date")) %>% 
   select(date, cf1, epa_2020, epa_2021, pm2.5_deq) %>% 
-  pivot_longer(cols = c(!date)) %>% 
   mutate(
-    name = factor(name,
-                  levels = c("cf1", "epa_2020", "epa_2021", "pm2.5_deq"),
-                  labels = c("Raw PA", "PA EPA '20", "PA EPA '21", "DEQ")),
-    source = fct_collapse(name,
-                          "PA" = c("Raw PA", "PA EPA '20", "PA EPA '21"),
-                          "DEQ" = "DEQ"),
     range = case_when(
       date >= date_pre_start & date <= date_pre_end ~ "pre",
       date >= date_fire_start & date <= date_fire_end ~ "fire",
@@ -69,13 +64,28 @@ data_corr %>%
     ),
     range = factor(range, levels = c("pre", "fire", "post"))
   ) %>% 
+  drop_na(range)
+```
+
+```{r time_series}
+
+data_daily %>% 
+  pivot_longer(cols = !c(date, range)) %>% 
+  mutate(
+    name = factor(name,
+                  levels = c("cf1", "epa_2020", "epa_2021", "pm2.5_deq"),
+                  labels = c("Raw PA", "PA EPA '20", "PA EPA '21", "DEQ")),
+    source = fct_collapse(name,
+                          "PA" = c("Raw PA", "PA EPA '20", "PA EPA '21"),
+                          "DEQ" = "DEQ")
+  ) %>% 
   drop_na(range) %>% 
   ggplot(aes(x = date, y = value, color = name, shape = source, linetype = source)) +
   facet_wrap(~range,
              scales = "free",
              labeller = as_labeller(facet_range)) +
-  geom_point() +
   geom_path() +
+  geom_point() +
   labs(
     title = "PM2.5 values",
     color = "Data: "
@@ -83,5 +93,41 @@ data_corr %>%
   theme(legend.position = "bottom")
 
 ggsave("figures/summer_se_laf.png")
+```
+
+```{r}
+data_daily %>% 
+  pivot_longer(cols = c(cf1, epa_2020, epa_2021), names_to = "corr", values_to = "pa") %>% 
+  rename("deq" = "pm2.5_deq") %>% 
+  ggplot(aes(x = pa, y = deq, color = corr)) +
+  # facet_wrap(~range,
+  #            scales = "free",
+  #            labeller = as_labeller(facet_range)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+  stat_smooth(method = "lm") +
+  geom_point(shape = 1) +
+  labs(
+    title = "Comparison of PA and DEQ sensor values",
+    color = "Correction factor",
+    x = "PA measurement",
+    y = "DEQ measurement"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+
+```{r openair_viz, eval = FALSE}
+data_openair <- data_deq_daily %>% 
+  select(date, pm2.5_deq, wind_mph, sigma_theta) %>% 
+  rename(
+    "ws" = "wind_mph",
+    #"wd" = "sigma_theta",
+    "pm2.5" = "pm2.5_deq"
+  )
+
+#calendarPlot(data_openair, year = 2020, pollutant = "pm2.5", annotate = "wd")
+calendarPlot(data_openair, year = 2020, pollutant = "pm2.5", annotate = "ws")
+
+windRose(data_openair, type = "month")
 ```
 
