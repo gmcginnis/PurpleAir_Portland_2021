@@ -13,35 +13,40 @@ library(readxl)
 library(lubridate)
 ```
 
-```{r}
-deq_path <- "data/deq/Portland SE Lafayette.xlsx"
+```{r inputs}
+input_deq_path <- "data/deq/Portland SE Lafayette.xlsx"
 
 input_deq_renames <- c(
   "Date Time" = "date_time",
-  "PM2.5" = "pm2.5",
+  "PM2.5" = "pm2.5_deq",
   "Temperature" = "temp_c",
   "Relative Humidity" = "rh",
   "Wind Speed (mph)" = "wind_mph",
   "Sigma Theta" = "sigma_theta"
 )
+```
 
-data_deq_names <- read_excel(deq_path,
+
+```{r data_import}
+data_deq_names <- read_excel(input_deq_path,
                              sheet = 1,
                              skip = 2,
-                             n_max = 0) %>% 
-  names()
+                             n_max = 0) %>% names()
 
-data_deq_raw <- read_excel(deq_path,
+data_deq_raw <- read_excel(input_deq_path,
                            sheet = 1,
                            skip = 4,
                            na = "----",
-                           col_names = data_deq_names) %>% 
-  mutate(`Date Time` = parse_date_time(`Date Time`,
+                           col_names = data_deq_names)
+
+remove(data_deq_names)
+```
+
+```{r data_wrangling}
+data_deq_wrangled <- data_deq_raw %>% 
+    mutate(`Date Time` = parse_date_time(`Date Time`,
                                        "%H:%M %m/%d/%Y",
-                                       tz = "Etc/GMT+8"))
-
-
-data_deq <- data_deq_raw %>% 
+                                       tz = "Etc/GMT+8")) %>% 
   plyr::rename(warn_missing = FALSE, input_deq_renames) %>% 
   select(intersect(all_of(input_deq_renames), names(.)))
 ```

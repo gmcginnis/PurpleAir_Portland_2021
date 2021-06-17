@@ -18,7 +18,7 @@ library(lubridate)
 input_path <- "data/raw"
 
 #OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Use NULL otherwise
-input_path_filter <- NULL
+#input_path_filter <- NULL
 
 # REQUIRED: choose to load primary and/or secondary data
 input_read_primary <- TRUE
