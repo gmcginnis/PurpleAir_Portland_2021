@@ -12,13 +12,16 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r run_scripts}
 input_path_filter <- "PSU STAR LAB SEL"
 source(knitr::purl("R/summer_wrangle.Rmd"))
+file.remove("summer_wrangle.R")
 remove(data_secondary, file_list, clean_data, list = ls(pattern = "input_"))
 
 input_deq_path <- "data/deq/Portland SE Lafayette.xlsx"
 source(knitr::purl("R/summer_deq.Rmd"))
+file.remove("summer_deq.R")
 remove(data_deq_raw, data_deq_names, deq_path, list = ls(pattern = "input_"))
 
 source(knitr::purl("R/summer_epa.Rmd"))
+file.remove("summer_epa.R")
 ```
 
 ```{r date_range_inputs}

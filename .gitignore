@@ -3,6 +3,3 @@
 .RData
 .Ruserdata
 data/wrangled_new/wrangled_data.csv
-summer_wrangle.R
-summer_deq.R
-summer_epa.R
