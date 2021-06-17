@@ -1,0 +1,58 @@
+---
+title: "summer_census"
+author: "Gillian McGinnis"
+date: "6/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidycensus)
+
+# Personal API key:
+#api_key <- "your api key here"
+#census_api_key(api_key, install = TRUE)
+
+input_path_filter <- "*STAR*"
+source(knitr::purl("R/summer_wrangle.Rmd"))
+file.remove("summer_wrangle.R")
+remove(data_secondary, file_list, clean_data, list = ls(pattern = "input_"))
+```
+
+```{r}
+mult_tract <- get_acs(
+  state = "OR",
+  county = "Multnomah",
+  geography = "tract",
+  variables = "B19025_001",
+  geometry = TRUE
+)
+
+get_acs(
+  state = "OR",
+  county = "Multnomah",
+  geography = "urban area",
+  variables = "B19025_001",
+  geometry = TRUE
+)
+
+data_primary %>% 
+  mutate(date = date(date_time)) %>% 
+  group_by(loc_tag, date) %>% 
+  summarize(pm2.5 = mean(pm2.5_cf1, na.rm = TRUE)) %>% 
+  left_join(data_loc) %>% 
+  ggplot() +
+  geom_point(data = mult_tract, aes(geometry = geometry, fill = estimate)) +
+  geom_point(data = data_primary, aes(x = long, y = lat, size = pm2.5, shape = loc_inout))
+
+mult_tract %>% 
+  ggplot(aes(geometry = geometry, fill = estimate)) +
+  geom_sf() +
+  coord_sf() +
+  theme_void() +
+  scale_fill_viridis_c(option = "plasma") +
+  theme(legend.position = "top") +
+  guides(fill = guide_colorbar(barwidth = 10))
+```
+
