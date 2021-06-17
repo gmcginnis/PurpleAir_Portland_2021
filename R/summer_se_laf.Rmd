@@ -78,5 +78,7 @@ data_corr %>%
     color = "Data: "
   ) +
   theme(legend.position = "bottom")
+
+ggsave("figures/summer_se_laf.png")
 ```
 
