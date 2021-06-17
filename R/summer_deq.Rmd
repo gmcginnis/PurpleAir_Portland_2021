@@ -1,0 +1,48 @@
+---
+title: "summer_deq"
+author: "Gillian McGinnis"
+date: "6/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+```{r}
+deq_path <- "data/deq/Portland SE Lafayette.xlsx"
+
+input_deq_renames <- c(
+  "Date Time" = "date_time",
+  "PM2.5" = "pm2.5",
+  "Temperature" = "temp_c",
+  "Relative Humidity" = "rh",
+  "Wind Speed (mph)" = "wind_mph",
+  "Sigma Theta" = "sigma_theta"
+)
+
+data_deq_names <- read_excel(deq_path,
+                             sheet = 1,
+                             skip = 2,
+                             n_max = 0) %>% 
+  names()
+
+data_deq_raw <- read_excel(deq_path,
+                           sheet = 1,
+                           skip = 4,
+                           na = "----",
+                           col_names = data_deq_names) %>% 
+  mutate(`Date Time` = parse_date_time(`Date Time`,
+                                       "%H:%M %m/%d/%Y",
+                                       tz = "Etc/GMT+8"))
+
+
+data_deq <- data_deq_raw %>% 
+  plyr::rename(warn_missing = FALSE, input_deq_renames) %>% 
+  select(intersect(all_of(input_deq_renames), names(.)))
+```
+
