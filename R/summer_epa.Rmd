@@ -9,10 +9,9 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
-library(PWFSLSmoke)
 ```
 
-```{r}
+```{r correcting}
 data_drop_18 <- data_primary %>% 
   mutate(
     date = date(date_time),
@@ -69,6 +68,11 @@ data_corr <- data_subset %>%
     )
   )
 
+
+remove(data_drop_18, data_subset)
+```
+
+```{r viz}
 data_corr %>% 
   filter(loc_tag != "Ogden84th") %>% 
   filter(date >= as.Date("2020-09-10") & date <= as.Date("2020-09-19")) %>% 
@@ -77,14 +81,5 @@ data_corr %>%
   facet_wrap(~date) +
   geom_point() +
   viridis::scale_color_viridis(option="mako", direction=-1, end = 0.85)
-
-# data_corr %>% 
-#   filter(loc_tag != "Ogden84th") %>% 
-#   pivot_longer(cols = c(epa_2020, epa_2021), names_to = "corr_factor", values_to = "epa") %>% 
-#   ggplot(aes(x = cf1, y = epa, color = corr_factor)) +
-#   #facet_wrap(~corr_factor) +
-#   stat_smooth(alpha = 0.3) +
-#   geom_point(shape = 3)
-
-remove(data_drop_18, data_subset)
 ```
+
