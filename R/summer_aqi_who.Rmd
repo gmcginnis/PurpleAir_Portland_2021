@@ -21,7 +21,21 @@ file.remove("summer_epa.R")
 
 ```{r}
 
-data_corr %>% 
+aqi_levels <- c("Good", "Moderate", "Unhealthy for sensitive", "Unhealthy", "Very unhealthy", "Hazardous")
+aqi_colors <- c("#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97", "#7e0023")
+
+aqi_index <- data.frame(
+  descriptor = c("Good", "Moderate", "Unhealthy for sensitive", "Unhealthy", "Very unhealthy", "Hazardous"),
+  color = c("#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97", "#7e0023"),
+  breakpoint_min = c(NA, 12.1, 35.5, 55.5, 150.5, 250.5),
+  breakpoint_max = c(12, 35.4, 55.5, 150.4, 250.4, NA)
+)
+
+# data_corr_backup <- data_corr
+# 
+# aqi_index[map_int(data_corr_backup$epa_2021, function(z) {which(map_lgl(seq_len(nrow(aqi_index)), ~between(z, aqi_index$breakpoint_min[.x], aqi_index$breakpoint_max[.x])  ))}),3]
+
+data_aqi <- data_corr %>% 
   mutate(
     aqi_cat = factor(case_when(
       epa_2021 <= 12 ~ "Good",
@@ -31,15 +45,24 @@ data_corr %>%
       epa_2021 >= 150.5 & epa_2021 <= 250.4 ~ "Very unhealthy",
       epa_2021 >= 250.5 ~ "Hazardous"
     ),
-    levels = c("Good", "Moderate", "Unhealthy for sensitive", "Unhealthy", "Very unhealthy", "Hazardous")),
+    levels = aqi_levels),
     who = case_when(epa_2021 >= 25 ~ TRUE,
                     TRUE ~ FALSE)
   ) %>% 
-  drop_na(aqi_cat) %>% 
-  ggplot(aes(x = date, y = epa_2021, shape = aqi_cat, color = loc_tag)) +
+  drop_na(aqi_cat)
+
+ggplot(data_aqi, aes(x = date, y = epa_2021, shape = aqi_cat, color = loc_tag)) +
   facet_wrap(~loc_tag) +
   geom_hline(yintercept = 25) +
   geom_line() +
   geom_point()
+
+
+data_corr %>% 
+  mutate(
+    aqi_cat = case_when(
+      var_of_interest <= 12 ~ "Good"
+    )
+  )
 ```
 
