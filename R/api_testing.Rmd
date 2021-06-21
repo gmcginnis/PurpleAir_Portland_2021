@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(knitr)
 library(rmarkdown)
-devtools::install_github("MazamaScience/AirSensor")
+#devtools::install_github("MazamaScience/AirSensor")
 
 library(tidyverse)
 library(AirSensor)
@@ -25,6 +25,133 @@ pat_createNew(
   startdate = 20180701, 
   enddate = 20180901
 )
+```
+
+```{r setting_archive_dir}
+path.expand("~")
+
+#archiveDir <- "~/data/airsensor_archive"
+archiveDir <- file.path(path.expand("~"), "PurpleAir_Portland_2021/data/airsensor_archive")
+```
+
+```{r find_sensors}
+# Set the archiveBaseUrl so we can get a 'pas' object
+setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
+
+# Load the default 'pas' (today for the entire US)
+pas <- pas_load()
+
+# Subset by state
+or <- pas_filter(pas, stateCode == "OR")
+
+# Look at it
+pas_leaflet(or)
+```
+
+```{r}
+pdx <- pas_filterArea(pas = or, w = -122.854, e = -122.58, s = 45.4, n = 45.6)
+
+pas_leaflet(pdx)
+```
+
+```{r}
+
+dir.create(archiveDir, recursive = TRUE)
+
+setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
+
+pas_leaflet(pdx)
+
+save(pdx, file = file.path(archiveDir, "pdx.rda"))
+
+# Examine archive directory:
+list.files(file.path(archiveDir))
+
+
+pdx_ids <- pas_getDeviceDeploymentIDs(pdx)
+
+#startdate <- "2020-09-01"
+#enddate <- "2020-11-30"
+startdate <- "2020-10-01"
+enddate <- "2020-10-31"
+timezone <- "America/Los_Angeles"
+
+patList <- list()
+
+idCount <- length(pdx_ids)
+count <- 0 
+successCount <- 0
+
+for (id in pdx_ids[1:idCount]) {
+  
+  count <- count + 1
+  print(sprintf("Working on %s (%d/%d) ...", id, count, idCount))
+  
+  # Use a try-block in case you get "no data" errors
+  result <- try({
+    
+    # Here we show the full function signature so you can see all possible arguments
+    patList[[id]] <- pat_createNew(
+      id = id,
+      label = NULL,        # not needed if you have the id
+      pas = pdx,
+      startdate = startdate,
+      enddate = enddate,
+      timezone = timezone,
+      baseUrl = "https://api.thingspeak.com/channels/",
+      verbose = FALSE
+    )
+    successCount <- successCount + 1
+    
+  }, silent = FALSE)
+  
+  if ( "try-error" %in% class(result) ) {
+    print(geterrmessage())
+  }
+  
+}
+
+print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
+
+save(patList, file = file.path(archiveDir, "patList.rda"))
+
+sapply(patList, function(x) { return(x$meta$label) })
+print(object.size(patList), units = "MB")
+fileSize <- file.size(file.path(archiveDir, "patList.rda"))
+sprintf("%.1f Mb", fileSize/1e6)
+```
+
+
+
+```{r}
+rm(list = setdiff(ls(), c("archiveDir")))
+
+# Examine archive directory:
+list.files(file.path(archiveDir))
+```
+
+```{r}
+pdx <- get(load(file.path(archiveDir, "pdx.rda"))) 
+patList <- get(load(file.path(archiveDir, "patList.rda")))
+
+psu <- patList[["a20209a9fb613315_3775"]]
+lc <- patList[["387c47b51f2c6811_26477"]]
+
+pat_multiplot(lc)
+
+pat_dygraph(lc)
+pat_outliers(lc)
+pat_internalFit(lc)
+pat_dailySoHPlot(lc)
+```
+
+```{r}
+#pas_staticMap(pdx, paletteName = "RdPu", mapTheme = "toner-lite", zoomAdjust = 1)
+```
+
+
+```{r}
+pas_getLabels(pas = pdx, pattern = "STAR")
 ```
 
 
