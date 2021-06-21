@@ -3,3 +3,4 @@
 .RData
 .Ruserdata
 data/wrangled_new/wrangled_data.csv
+data/airsensor_archive
