@@ -54,7 +54,6 @@ input_selects <- c(
   "pm2.5_atm",
   "temp_f",
   "rh"
-  # "rh",
   # "pm1_cf1",
   # "pm1_atm",
   # "pm10_cf1",
@@ -81,7 +80,7 @@ data_loc <- data.frame(source = file_list) %>%
     loc_tag = str_replace(loc_tag, " B$", ""),
     loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
     lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
-    long = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
+    lon = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
   ) %>% 
   select(!c(source, loc_path)) %>% 
   group_by(loc_tag) %>%
@@ -90,7 +89,7 @@ data_loc <- data.frame(source = file_list) %>%
   mutate(
     loc_inout = factor(loc_inout, levels = c("outside", "inside")),
     lat = as.numeric(lat),
-    long = as.numeric(long)
+    lon = as.numeric(lon)
   )
 ```
 
