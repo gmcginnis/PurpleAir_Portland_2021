@@ -1,0 +1,79 @@
+---
+title: "summer_leaflet"
+author: "Gillian McGinnis"
+date: "6/21/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+input_path_filter <- "*STAR*"
+source(knitr::purl("R/summer_wrangle.Rmd"))
+file.remove("summer_wrangle.R")
+remove(data_secondary, file_list, clean_data, list = ls(pattern = "input_"))
+
+input_deq_path <- "data/deq/Portland SE Lafayette.xlsx"
+source(knitr::purl("R/summer_deq.Rmd"))
+file.remove("summer_deq.R")
+remove(data_deq_raw, data_deq_names, deq_path, list = ls(pattern = "input_"))
+
+source(knitr::purl("R/summer_epa.Rmd"))
+file.remove("summer_epa.R")
+
+library(lubridate)
+library(leaflet)
+```
+
+```{r}
+input_date_starts <- as.Date(c("2020-09-01", "2020-09-10", "2020-09-20"))
+input_date_ends <- as.Date(c("2020-09-09", "2020-09-19", "2020-09-29"))
+input_date_tags <- factor(c("pre", "fire", "post"))
+
+data_dates <- data.frame(
+  input_date_starts, input_date_ends, input_date_tags
+) %>% 
+  arrange(input_date_starts) %>% 
+  mutate(date_tag = fct_inorder(input_date_tags)) %>% 
+  pivot_longer(cols = c(input_date_starts, input_date_ends), values_to = "date") %>% 
+  group_by(date_tag) %>% 
+  complete(date = full_seq(date, 1)) %>%
+  select(!c(name, input_date_tags))
+
+data_dated <- data_corr %>% 
+  left_join(data_dates) %>% 
+  drop_na(date_tag)
+
+remove(data_dates, list = ls(pattern = "input_"))
+```
+
+
+```{r}
+data_full <- data_dated %>% 
+  left_join(data_loc)
+
+date_tag_list <- as.character(unique(data_full$date_tag))
+groupColors <- colorFactor(palette = "RdYlBu", domain = data_full$date_tag)
+
+map <- leaflet(data_full) %>% 
+  addProviderTiles(providers$Stamen.TonerLite)
+
+pal <- colorNumeric(palette = "Spectral", domain = data_full$epa_2021)
+
+for(date_tag_single in date_tag_list){
+  data_temp <- data_full[data_full$date_tag == date_tag_single,]
+  map <- map %>% addCircleMarkers(
+    data = data_temp,
+    lng = ~lon,
+    lat = ~lat,
+    color = ~pal(epa_2021),
+    group = date_tag_single
+  )
+  
+  #remove(data_temp, date_tag_single, date_tag_list)
+}
+
+map %>% addLayersControl(baseGroups = date_tag_list,
+                         options = layersControlOptions(collapsed = FALSE))
+```
+

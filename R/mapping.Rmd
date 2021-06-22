@@ -42,6 +42,8 @@ pdx_map <- get_stamenmap(
 )
 
 save(pdx_map, file = "data/maps/pdx_map.RData")
+
+remove(lat_max, lat_min, long_max, long_min, pdx_box)
 ```
 
 ```{r date_range_inputs}
