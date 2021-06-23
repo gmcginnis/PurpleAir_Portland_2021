@@ -12,13 +12,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(knitr)
 library(rmarkdown)
+library(lubridate)
 #devtools::install_github("MazamaScience/AirSensor")
 
 library(tidyverse)
 library(AirSensor)
 ```
 
-```{r}
+```{r mini_test, eval = FALSE}
 pat_createNew(
   label = "Seattle", 
   pas = example_pas, 
@@ -72,8 +73,8 @@ pdx_ids <- pas_getDeviceDeploymentIDs(pdx)
 
 #startdate <- "2020-09-01"
 #enddate <- "2020-11-30"
-startdate <- "2020-10-01"
-enddate <- "2020-10-31"
+startdate <- "2020-07-01"
+enddate <- "2020-07-08"
 timezone <- "America/Los_Angeles"
 
 patList <- list()
@@ -151,7 +152,39 @@ pat_dailySoHPlot(lc)
 
 
 ```{r}
-pas_getLabels(pas = pdx, pattern = "STAR")
+star_labels <- pas_getLabels(pas = pdx, pattern = "STAR")
 ```
 
+
+```{r, eval = FALSE}
+# patList[[2]]$meta
+# 
+# pat_extractMeta(patList[[2]])
+# 
+# meta_df <- data.frame()
+# data_df <- data.frame()
+# 
+# for(i in patList){
+#   df_temp <- pat_extractMeta(patList[[i]])
+#   
+#   meta_df <- rbind(meta_df, df_temp)
+# }
+
+patList[[1]]$data %>% 
+  select(datetime, pm25_A, pm25_B, pm25_atm_A, pm25_atm_B, temperature, humidity) %>% 
+  mutate(date = date(datetime)) %>% 
+  select(!datetime) %>% 
+  group_by(date) %>% 
+  summarize_at(vars(!date), mean, na.rm = TRUE)
+
+map_dfr(patList[1], patList[2])
+
+#unnest(patList[[2]]$data, cols = c(datetime, pm25_A, pm25_B, pm25_atm_A, pm25_atm_B, temperature, humidity))
+patList_transposed <- transpose(patList)
+
+patList_transposed[[1]] %>% reduce(inner_join)
+
+sites_meta <- bind_rows(patList_transposed[[1]], .id = "site_id")
+sites_data <- bind_rows(patList_transposed[[2]], .id = "site_id")
+```
 

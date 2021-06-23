@@ -8,7 +8,7 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-input_path_filter <- "*PSU*"
+input_path_filter <- "*SE*"
 source(knitr::purl("R/summer_wrangle.Rmd"))
 file.remove("summer_wrangle.R")
 remove(data_secondary, file_list, clean_data, list = ls(pattern = "input_"))
@@ -18,40 +18,128 @@ file.remove("summer_epa.R")
 
 library(ggmap)
 library(lubridate)
+library(viridis)
 ```
 
 
-```{r function_grab_map}
+```{r apply_dates_set}
+apply_dates <- function(dataset, starts, ends, tags){
+  
+  starts <- as.Date(starts)
+  ends <- as.Date(ends)
+  tags <- factor(tags)
+  
+  data_temp <- data.frame(starts, ends, tags) %>% 
+    arrange(starts) %>% 
+    mutate(date_tag = fct_inorder(tags)) %>% 
+    pivot_longer(cols = c(starts, ends), values_to = "date") %>% 
+    group_by(date_tag) %>% 
+    complete(date = full_seq(date, 1)) %>% 
+    select(!c(name, tags))
+  
+  dataset %>% 
+    left_join(data_temp) %>% 
+    drop_na(date_tag)
+}
+
+data_dated <- apply_dates(data_corr,
+                          c("2020-09-01", "2020-09-10", "2020-09-20"),
+                          c("2020-09-09", "2020-09-19", "2020-09-29"),
+                          c("Pre", "Fire", "Post"))
+```
+
+```{r apply_dates_grouped}
+# apply_date_averages <- function(dataset, time){
+#   # dataset %>% 
+#   #   mutate(num = {{time}}(date_time))
+# }
+# 
+# apply_date_averages(data_primary, hour)
+# 
+# data_primary %>% 
+#   slice(1:1000) %>% 
+#   mutate(
+#     date = date(date_time),
+#     year = year(date_time),
+#     month = month(date_time),
+#     day = day(date_time),
+#     time = time(date_time),
+#     hour = hour(date_time),
+#     minute = minute(date_time),
+#     second = second(date_time)
+#   ) %>% 
+#   group_by() %>% 
+#   head()
+```
+
+
+
+```{r map_function}
+lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+lab_inout <- paste("Location:")
+
+map_q <- function(dataset, correction = epa_2021,
+                  maptype = "toner-lite", zoom = 11, darken = 0.5, darken_color = "black"){
+  data_temp <- dataset %>% 
+    ungroup() %>% 
+    group_by(loc_tag, date_tag) %>% 
+    summarize(mean = mean({{correction}}, na.rm=TRUE)) %>% 
+    left_join(data_loc)
+  
+  qmplot(data = data_temp, x = lon, y = lat, geom = "blank", maptype = maptype, zoom = zoom, darken = c(darken, darken_color)) +
+    facet_wrap(~date_tag) +
+    geom_point(aes(size = mean, fill = mean, shape = loc_inout), color = "white", alpha = 0.7) +
+    scale_fill_viridis(option = "magma", begin = 0.2, end = 0.9, direction = -1) +
+    scale_size_continuous() +
+    scale_shape_manual(values = c("outside" = 21, "inside" = 23)) +
+    guides(fill = guide_legend(), size = guide_legend()) +
+    theme_void() +
+    theme(
+      legend.position = "bottom",
+      legend.box = "vertical"
+    ) +
+    labs(
+      fill = lab_pm,
+      size = lab_pm,
+      shape = lab_inout
+    )
+}
+
+map_q(data_dated, correction = epa_2020)
+```
+
+```{r function_grab_map, eval = FALSE}
 grab_map <- function(bottom, top, left, right, maptype = "toner-lite", zoom = 11, crop = TRUE){
   coord_box <- c(bottom = bottom, top = top, left = left, right = right)
   data_map <- get_stamenmap(coord_box, maptype = maptype, zoom = zoom, crop = crop)
 }
 
-pdx_map <- grab_map(45.5, 45.6, -122.854, -122.58, "toner-lite") %>% ggmap()
+pdx_map <- grab_map(45.5, 45.6, -122.854, -122.58, "toner-lite")
+
+ggmap(pdx_map)
 ```
 
-```{r}
-grab_map_auto <- function(location_df, maptype = "toner-lite", zoom = 11, crop = TRUE){
+```{r map_grab, eval = FALSE}
+grab_map_auto <- function(location_df, maptype = "toner-lite", adj = 0.03, zoom = 11, crop = TRUE){
   location_df %>% 
     ungroup() %>% 
     summarize(
-      left = min(lon),
-      bottom = min(lat),
-      right = max(lon),
-      top = max(lat)
+      left = min(lon)-adj,
+      bottom = min(lat)-adj,
+      right = max(lon)+adj,
+      top = max(lat)+adj
     ) %>% 
     as.numeric() %>% 
     get_stamenmap(maptype = maptype, zoom = zoom, crop = crop)
 }
 
-grab_map_auto(data_loc)
+grab_map_auto(data_loc, maptype = "toner-lite") %>% ggmap(darken = 0.7) + geom_point(data = data_loc, aes(color = "red"))
 ```
 
-
-```{r}
+```{r apply_dates_manual, eval = FALSE}
 input_date_starts <- as.Date(c("2020-09-01", "2020-09-10", "2020-09-20"))
 input_date_ends <- as.Date(c("2020-09-09", "2020-09-19", "2020-09-29"))
-input_date_tags <- factor(c("pre", "fire", "post"))
+input_date_tags <- factor(c("Pre", "Fire", "Post"))
 
 data_dates <- data.frame(
   input_date_starts, input_date_ends, input_date_tags
@@ -70,16 +158,44 @@ data_dated <- data_corr %>%
 remove(data_dates, list = ls(pattern = "input_"))
 ```
 
-```{r}
+
+```{r mapping_manual, eval = FALSE}
 data_mapping <- data_dated %>% 
   group_by(loc_tag, date_tag) %>% 
   summarize(epa_2021 = mean(epa_2021, na.rm = TRUE)) %>% 
   left_join(data_loc)
 
-pdx %>% 
+pdx_map %>% 
   ggmap() +
   facet_wrap(~date_tag) +
-  geom_point(data = data_mapping, aes(size = epa_2021, color = epa_2021, shape = loc_inout))
+  geom_point(data = data_mapping, aes(size = epa_2021, color = epa_2021, shape = loc_inout)) +
+  scale_color_viridis(option = "magma", begin = 0.2, end = 0.9, direction = -1) +
+  scale_size_continuous() +
+  theme_void() +
+  guides(color = guide_legend(), size = guide_legend()) +
+  theme(legend.position = "bottom")
 ```
 
+```{r map_partly_functioned, eval = FALSE}
+map_full <- function(input_data, input_map, correction = epa_2021){
+  data_temp <- input_data %>% 
+    group_by(loc_tag, date_tag) %>% 
+    summarize(mean = mean({{correction}}, na.rm=TRUE)) %>% 
+    left_join(data_loc)
+  
+  input_map %>% 
+    ggmap() +
+    facet_wrap(~date_tag) +
+    geom_point(data = data_temp, aes(size = mean, color = mean, shape = loc_inout)) +
+    scale_color_viridis(option = "magma", begin = 0.2, end = 0.9, direction = -1) +
+    scale_size_continuous() +
+    guides(color = guide_legend(), size = guide_legend()) +
+    theme_void() +
+    theme(
+      legend.position = "bottom",
+      legend.box = "vertical"
+    )
+}
 
+map_full(data_dated, pdx_map, correction = epa_2021)
+```

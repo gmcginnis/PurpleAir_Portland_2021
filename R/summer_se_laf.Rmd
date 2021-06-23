@@ -117,6 +117,34 @@ data_daily %>%
 ggsave("figures/summer_se_laf_fits.png")
 ```
 
+```{r lrapa}
+data_lrapa <- data_primary %>% 
+  mutate(
+    lrapa = case_when(pm2.5_cf1 <= 65 ~ 0.5 * pm2.5_atm - 0.66),
+    date = date(date_time)
+  ) %>% 
+  group_by(date) %>% 
+  summarize(lrapa = mean(lrapa))
+
+data_daily %>% 
+  left_join(data_lrapa) %>% 
+  pivot_longer(cols = c(cf1, epa_2020, epa_2021, lrapa), names_to = "corr", values_to = "pa") %>% 
+  rename("deq" = "pm2.5_deq") %>% 
+  ggplot(aes(x = pa, y = deq, color = corr)) +
+  facet_wrap(~range,
+             scales = "free",
+             labeller = as_labeller(facet_range)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+  stat_smooth(method = "lm") +
+  geom_point(shape = 1) +
+  labs(
+    title = "Comparison of PA and DEQ sensor values",
+    color = "Correction factor",
+    x = "PA measurement",
+    y = "DEQ measurement"
+  ) +
+  theme(legend.position = "bottom")
+```
 
 ```{r openair_viz, eval = FALSE}
 data_openair <- data_deq_daily %>% 

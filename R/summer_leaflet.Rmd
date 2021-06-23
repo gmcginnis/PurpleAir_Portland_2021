@@ -50,7 +50,8 @@ remove(data_dates, list = ls(pattern = "input_"))
 
 ```{r}
 data_full <- data_dated %>% 
-  left_join(data_loc)
+  left_join(data_loc) %>% 
+  group_by(date_tag, loc_tag, loc_inout, lat, lon)
 
 date_tag_list <- as.character(unique(data_full$date_tag))
 groupColors <- colorFactor(palette = "RdYlBu", domain = data_full$date_tag)
@@ -62,18 +63,25 @@ pal <- colorNumeric(palette = "Spectral", domain = data_full$epa_2021)
 
 for(date_tag_single in date_tag_list){
   data_temp <- data_full[data_full$date_tag == date_tag_single,]
-  map <- map %>% addCircleMarkers(
-    data = data_temp,
-    lng = ~lon,
-    lat = ~lat,
-    color = ~pal(epa_2021),
-    group = date_tag_single
-  )
+  
+  map <- map %>%
+    addCircleMarkers(
+      data = data_temp,
+      lng = ~lon,
+      lat = ~lat,
+      color = ~pal(epa_2021),
+      radius = ~sqrt(epa_2021),
+      group = date_tag_single
+    )
   
   #remove(data_temp, date_tag_single, date_tag_list)
 }
 
-map %>% addLayersControl(baseGroups = date_tag_list,
-                         options = layersControlOptions(collapsed = FALSE))
-```
+map %>%
+  addLayersControl(
+    baseGroups = date_tag_list,
+    options = layersControlOptions(collapsed = FALSE)
+  )
 
+remove(date_tag_list, date_tag_single, data_temp)
+```

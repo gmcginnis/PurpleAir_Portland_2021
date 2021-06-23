@@ -1,0 +1,110 @@
+---
+title: "summer_api"
+author: "Gillian McGinnis"
+date: "6/22/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(AirSensor)
+library(lubridate)
+```
+
+```{r inputs}
+# Boundaries (in degrees) of monitors to include
+w <- -122.854
+e <- -122.58
+s <- 45.4
+n <- 45.6
+
+startdate <- "2021-03-01"
+enddate <- "2021-03-31"
+timezone <- "America/Los_Angeles"
+```
+
+
+```{r archive}
+archiveDir <- file.path(getwd(), "data/airsensor_archive")
+```
+
+```{r getting_sensors}
+get_local_pas <- function(stateCode = "OR", west = -122.854, east = -122.58, south = 45.4, north = 45.6){
+  setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
+  pas <- pas_load()
+  pas_state <- pas_filter(pas, stateCode == stateCode)
+  pas_area <- pas_filterArea(pas = pas_state, w = west, e = east, s = south, n = north)
+}
+
+local_pas <- get_local_pas()
+save(local_pas, file = file.path(archiveDir, "pdx.rda"))
+
+remove(get_local_pas)
+```
+
+```{r}
+#Setup
+ids <- pas_getDeviceDeploymentIDs(local_pas)
+
+startdate <- "2021-02-01"
+enddate <- "2021-03-31"
+timezone <- "America/Los_Angeles"
+
+patList <- list()
+
+idCount <- length(local_pas)
+count <- 0 
+successCount <- 0
+
+# Iteration
+for (id in ids[1:idCount]) {
+  
+  count <- count + 1
+  print(sprintf("Working on %s (%d/%d) ...", id, count, idCount))
+  
+  # Use a try-block in case you get "no data" errors
+  result <- try({
+    
+    # Here we show the full function signature so you can see all possible arguments
+    patList[[id]] <- pat_createNew(
+      id = id,
+      label = NULL,        # not needed if you have the id
+      pas = pdx,
+      startdate = startdate,
+      enddate = enddate,
+      timezone = timezone,
+      baseUrl = "https://api.thingspeak.com/channels/",
+      verbose = FALSE
+    )
+    successCount <- successCount + 1
+    
+  }, silent = FALSE)
+  
+  if ( "try-error" %in% class(result) ) {
+    print(geterrmessage())
+  }
+  
+}
+
+# Review
+print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
+
+save(patList, file = file.path(archiveDir, "patList.rda"))
+
+remove(startdate, enddate, timezone, idCount, count, successCount, ids, id, result)
+```
+
+```{r transpose_data}
+patList_transposed <- transpose(patList)
+
+data_meta <- bind_rows(patList_transposed[[1]], .id = "site_id")
+data_raw <- bind_rows(patList_transposed[[2]], .id = "site_id")
+
+# Cleaning environment
+remove(patList_transposed)
+```
+
