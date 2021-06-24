@@ -15,19 +15,6 @@ library(AirSensor)
 library(lubridate)
 ```
 
-```{r inputs}
-# Boundaries (in degrees) of monitors to include
-w <- -122.854
-e <- -122.58
-s <- 45.4
-n <- 45.6
-
-startdate <- "2021-03-01"
-enddate <- "2021-03-31"
-timezone <- "America/Los_Angeles"
-```
-
-
 ```{r archive}
 archiveDir <- file.path(getwd(), "data/airsensor_archive")
 ```
@@ -52,7 +39,8 @@ ids <- pas_getDeviceDeploymentIDs(local_pas)
 
 startdate <- "2021-02-01"
 enddate <- "2021-03-31"
-timezone <- "America/Los_Angeles"
+#timezone <- "America/Los_Angeles"
+#timezone <- unique(local_pas$timezone)
 
 patList <- list()
 
@@ -73,10 +61,10 @@ for (id in ids[1:idCount]) {
     patList[[id]] <- pat_createNew(
       id = id,
       label = NULL,        # not needed if you have the id
-      pas = pdx,
+      pas = local_pas,
       startdate = startdate,
       enddate = enddate,
-      timezone = timezone,
+      #timezone = timezone,
       baseUrl = "https://api.thingspeak.com/channels/",
       verbose = FALSE
     )
@@ -106,5 +94,27 @@ data_raw <- bind_rows(patList_transposed[[2]], .id = "site_id")
 
 # Cleaning environment
 remove(patList_transposed)
+```
+
+```{r shrink_sets}
+data_meta
+
+data_location <- data_meta %>% 
+  select(site_id, label, longitude, latitude, timezone)
+
+data_pm25 <- data_raw %>% 
+  select(site_id, datetime, temperature, humidity, pm25_A, pm25_B, pm25_atm_A, pm25_atm_B)
+
+data.frame(
+  datetime = as_datetime(c("2020-03-05 08:02:12", "2020-03-05 09:01:04")),
+  timezone = c("Poland", "Cuba")
+) %>% 
+  #group_by(timezone) %>% 
+  rowwise %>% 
+  mutate(
+    datetime_adj = with_tz(datetime, tzone = timezone),
+    datetime_poland = with_tz(datetime, tzone = "Poland"),
+    datetime_cuba = with_tz(datetime, tzone = "Cuba")
+    )
 ```
 
