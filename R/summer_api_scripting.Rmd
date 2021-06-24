@@ -39,17 +39,25 @@ w <- -122.854
 # If NULL, all monitors specified in the above boundaries will be included regardless of state
 state_code <- "OR"
 
-# Start and end dates, in UTC. It's better to slightly over-/under- estimate for the desired results
-#startdate <- "2021-03-01"
-#enddate <- "2021-03-08"
+# Start and end dates
 startdate <- "2021-03-13"
 enddate <- "2021-03-16"
-# Olson timezone. Use 'OlsonNames()' to see a list of valid values.
-#timezone <- "America/Los_Angeles"
+
+# Run date grouping?
+run_dategrouping <- FALSE
+# Date grouping categories
+if(run_dategrouping == TRUE){
+  dategroup_tags <- c("Before", "Later")
+  dategroup_starts <- c("2021-03-13", "2021-03-15")
+  dategroup_ends <- c("2021-03-14", "2021-03-16")
+} else {
+  print("Date grouping will not occur.")
+}
+
 ```
 
 ```{r getting_pas}
-get_area_pas <- function(state_code, w, e, s, n){
+get_area_pas <- function(state_code = NULL, w, e, s, n){
   setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
   pas <- pas_load()
   if(is.null(state_code) == TRUE){
@@ -108,7 +116,7 @@ for (id in ids[1:idCount]) {
 # Review
 print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
 
-remove(startdate, enddate, timezone, idCount, count, successCount, ids, id, result)
+remove(startdate, enddate, idCount, count, successCount, ids, id, result)
 ```
 
 ```{r transpose_data}
@@ -119,6 +127,28 @@ raw_data <- bind_rows(patList_transposed[[2]], .id = "site_id")
 
 # Cleaning environment
 remove(patList_transposed)
+```
+
+```{r timezone_function}
+adjust_timezone <- function(dataset, location_data = raw_meta){
+  if(length(unique(location_data$timezone)) > 1){
+  print("Multiple time zones reported. Timestamp will be based on the most frequent time zone reported.")
+  timezone <- (location_data %>% 
+                 group_by(timezone) %>% 
+                 count() %>% 
+                 arrange(desc(n)) %>% 
+                 pull(timezone))[1]
+  } else {
+    timezone <- unique(location_data$timezone)
+  }
+  print(paste("Time zone applied:", timezone))
+  
+  dataset_new <- dataset %>%
+    rename(datetime_utc = datetime) %>% 
+    mutate(datetime = with_tz(datetime_utc, tzone = timezone))
+  
+  return(dataset_new)
+}
 ```
 
 ```{r qc_sets}
@@ -143,35 +173,18 @@ data_pm25 <- raw_data %>%
     # Filtering humidity for 0:100
     between(humidity, 0, 100)
   ) %>% 
+  # Adjusting to be local time zone
+  adjust_timezone() %>% 
   # Creating variables for date and hour
   mutate(
     date = date(datetime),
-    hour = hour(datetime)
-  )
+    #hour = hour(datetime)
+    hour = floor_date(datetime, unit = "hour")
+  ) %>% 
+  select(site_id, datetime_utc, datetime, date, hour, everything())
+
+remove(adjust_timezone)
 ```
-
-```{r tz_adjusting}
-adjust_timezone <- function(dataset, location_data){
-  if(length(unique(location_data$timezone)) > 1){
-  print("Multiple time zones reported. Timestamp will be based on the most frequent time zone reported.")
-  timezone <- (location_data %>% 
-                 group_by(timezone) %>% 
-                 count() %>% 
-                 arrange(desc(n)) %>% 
-                 pull(timezone))[1]
-  } else {
-    timezone <- unique(location_data$timezone)
-  }
-  print(paste("Time zone used:", timezone))
-  
-  dataset %>%
-    rename(datetime_utc = datetime) %>% 
-    mutate(datetime = with_tz(datetime_utc, tzone = timezone))
-}
-
-data_tz <- adjust_timezone(raw_data, raw_meta)
-```
-
 
 ```{r corr_epa_factor}
 # Filter all dates in which there are fewer than 18/24 hr worth of measurements
@@ -237,7 +250,7 @@ data_pm25_lrapa <- data_pm25 %>%
 ```
 
 ```{r apply_dates_set}
-apply_dates <- function(dataset, starts, ends, tags){
+apply_dates <- function(dataset, starts = dategroup_starts, ends = dategroup_ends, tags = dategroup_tags){
   
   starts <- as.Date(starts)
   ends <- as.Date(ends)
@@ -256,19 +269,25 @@ apply_dates <- function(dataset, starts, ends, tags){
     drop_na(date_tag)
 }
 
-data_dated <- apply_dates(data_pm25_epa,
-                          c("2021-03-01", "2021-03-04"),
-                          c("2021-03-03", "2021-03-08"),
-                          c("Before", "After"))
-```
+if(run_dategrouping == TRUE){
+  data_pm25_epa <- apply_dates(data_pm25_epa)
+  data_pm25_lrapa <- apply_dates(data_pm25_lrapa)
+  print("Data now grouped by provided date groupings.")
+  remove(dategroup_starts, dategroup_ends, dategroup_tags)
+} else {
+  print("Date groups not applied.")
+}
 
+remove(apply_dates, run_dategrouping)
+```
 
 ```{r map_function}
 lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
 lab_inout <- paste("Location:")
 
-map_q <- function(pm_data, location_data, correction = epa_2021,
-                  maptype = "toner-lite", zoom = 11, darken = 0.5, darken_color = "black"){
+map_q <- function(pm_data, location_data = data_meta, correction = epa_2021,
+                  maptype = "toner-lite", zoom = 11, darken = 0.5, darken_color = "black",
+                  point_size = 3){
   data_temp <- pm_data %>% 
     ungroup() %>% 
     group_by(site_id, date_tag) %>% 
@@ -286,7 +305,7 @@ map_q <- function(pm_data, location_data, correction = epa_2021,
       ),
       color = "white",
       alpha = 0.85,
-      size = 3,
+      size = point_size,
       shape = 21
     ) +
     #scale_fill_viridis(option = "magma", begin = 0.2, end = 0.9, direction = -1) +
@@ -306,6 +325,7 @@ map_q <- function(pm_data, location_data, correction = epa_2021,
     )
 }
 
-map_q(data_dated, data_meta)
+map_q(data_pm25_epa, point_size = 6)
+map_q(data_pm25_lrapa, point_size = 5, correction = lrapa)
 ```
 
