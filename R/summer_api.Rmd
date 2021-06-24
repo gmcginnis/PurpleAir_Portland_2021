@@ -106,15 +106,34 @@ data_pm25 <- data_raw %>%
   select(site_id, datetime, temperature, humidity, pm25_A, pm25_B, pm25_atm_A, pm25_atm_B)
 
 data.frame(
-  datetime = as_datetime(c("2020-03-05 08:02:12", "2020-03-05 09:01:04")),
+  datetime = as_datetime(c("2020-03-05 08:02:12", "2020-03-05 08:01:04"), tz="UTC"),
   timezone = c("Poland", "Cuba")
 ) %>% 
-  #group_by(timezone) %>% 
-  rowwise %>% 
+  # group_by(timezone) %>% 
+  rowwise() %>% 
   mutate(
-    datetime_adj = with_tz(datetime, tzone = timezone),
-    datetime_poland = with_tz(datetime, tzone = "Poland"),
-    datetime_cuba = with_tz(datetime, tzone = "Cuba")
+    poland = with_tz(datetime, tzone = "Poland"),
+    cuba = with_tz(datetime, tzone = "Cuba"),
+    new = with_tz(datetime, tzone = timezone),
+    format = format(new, usetz = TRUE)
+    # #new = ymd_hms(datetime, tz = timezone),
+    # with = with_tz(datetime, tzone = timezone),
+    # alt = format(with, usetz = TRUE)
     )
 ```
 
+```{r tz_adjusting}
+raw_data %>% 
+  select(datetime, temperature) %>% 
+  mutate(
+    datetime_new = with_tz(datetime, tzone = raw_meta$timezone[1])
+  )
+
+raw_data %>% 
+  select(site_id, datetime, temperature) %>% 
+  left_join(select(raw_meta, site_id, timezone)) %>% 
+  rowwise %>% 
+  mutate(
+    datetime_new = with_tz(datetime, tzone = timezone)
+  )
+```

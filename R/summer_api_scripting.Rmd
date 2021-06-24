@@ -40,8 +40,10 @@ w <- -122.854
 state_code <- "OR"
 
 # Start and end dates, in UTC. It's better to slightly over-/under- estimate for the desired results
-startdate <- "2021-03-01"
-enddate <- "2021-03-08"
+#startdate <- "2021-03-01"
+#enddate <- "2021-03-08"
+startdate <- "2021-03-13"
+enddate <- "2021-03-16"
 # Olson timezone. Use 'OlsonNames()' to see a list of valid values.
 #timezone <- "America/Los_Angeles"
 ```
@@ -147,6 +149,29 @@ data_pm25 <- raw_data %>%
     hour = hour(datetime)
   )
 ```
+
+```{r tz_adjusting}
+adjust_timezone <- function(dataset, location_data){
+  if(length(unique(location_data$timezone)) > 1){
+  print("Multiple time zones reported. Timestamp will be based on the most frequent time zone reported.")
+  timezone <- (location_data %>% 
+                 group_by(timezone) %>% 
+                 count() %>% 
+                 arrange(desc(n)) %>% 
+                 pull(timezone))[1]
+  } else {
+    timezone <- unique(location_data$timezone)
+  }
+  print(paste("Time zone used:", timezone))
+  
+  dataset %>%
+    rename(datetime_utc = datetime) %>% 
+    mutate(datetime = with_tz(datetime_utc, tzone = timezone))
+}
+
+data_tz <- adjust_timezone(raw_data, raw_meta)
+```
+
 
 ```{r corr_epa_factor}
 # Filter all dates in which there are fewer than 18/24 hr worth of measurements
