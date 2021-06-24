@@ -1,0 +1,286 @@
+---
+title: "summer_api_scripting"
+author: "Gillian McGinnis"
+date: "6/23/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(AirSensor)
+library(lubridate)
+library(ggmap)
+library(viridis)
+```
+
+```{r fixing_qmplot, eval = FALSE}
+detach("package:ggmap")
+remove.packages("ggmap")
+
+devtools::install_github("dkahle/ggmap")
+
+.rs.restartR()
+library(ggmap)
+```
+
+
+```{r inputs}
+# Boundaries (in degrees) of monitors to include
+n <- 45.6
+e <- -122.58
+s <- 45.4
+w <- -122.854
+
+# Optional: State of monitors to include. Default: NULL
+# If NULL, all monitors specified in the above boundaries will be included regardless of state
+state_code <- "OR"
+
+# Start and end dates, in UTC. It's better to slightly over-/under- estimate for the desired results
+startdate <- "2021-03-01"
+enddate <- "2021-03-08"
+# Olson timezone. Use 'OlsonNames()' to see a list of valid values.
+#timezone <- "America/Los_Angeles"
+```
+
+```{r getting_pas}
+get_area_pas <- function(state_code, w, e, s, n){
+  setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
+  pas <- pas_load()
+  if(is.null(state_code) == TRUE){
+    pas_state <- pas
+  } else {
+    pas_state <- pas_filter(pas, stateCode == state_code)
+  }
+  pas_area <- pas_filterArea(pas = pas_state, w = w, e = e, s = s, n = n)
+  return(pas_area)
+}
+
+pas_area <- get_area_pas(state_code = state_code, w = w, e = e, s = s, n = n)
+
+remove(get_area_pas, state_code, n, e, s, w)
+```
+
+```{r getting_pat}
+# Setup
+ids <- pas_getDeviceDeploymentIDs(pas_area)
+#timezone <- unique(pas_area$timezone)
+patList <- list()
+idCount <- length(pas_area)
+count <- 0 
+successCount <- 0
+
+# Iteration
+for (id in ids[1:idCount]) {
+  
+  count <- count + 1
+  print(sprintf("Working on %s (%d/%d) ...", id, count, idCount))
+  
+  # Use a try-block in case you get "no data" errors
+  result <- try({
+    
+    # Here we show the full function signature so you can see all possible arguments
+    patList[[id]] <- pat_createNew(
+      id = id,
+      label = NULL,        # not needed if you have the id
+      pas = pas_area,
+      startdate = startdate,
+      enddate = enddate,
+      #timezone = timezone,
+      baseUrl = "https://api.thingspeak.com/channels/",
+      verbose = FALSE
+    )
+    successCount <- successCount + 1
+    
+  }, silent = FALSE)
+  
+  if ( "try-error" %in% class(result) ) {
+    print(geterrmessage())
+  }
+  
+}
+
+# Review
+print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
+
+remove(startdate, enddate, timezone, idCount, count, successCount, ids, id, result)
+```
+
+```{r transpose_data}
+patList_transposed <- transpose(patList)
+
+raw_meta <- bind_rows(patList_transposed[[1]], .id = "site_id")
+raw_data <- bind_rows(patList_transposed[[2]], .id = "site_id")
+
+# Cleaning environment
+remove(patList_transposed)
+```
+
+```{r qc_sets}
+data_meta <- raw_meta %>% 
+  # Selecting only variables of interest, to save on storage
+  select(site_id, DEVICE_LOCATIONTYPE, label, longitude, latitude, timezone)
+
+data_pm25 <- raw_data %>% 
+  # Selecting only variables of interest, to save on storage
+  select(site_id, datetime, temperature, humidity, pm25_A, pm25_B, pm25_atm_A, pm25_atm_B) %>% 
+  # Basic quality control; only possible values are kept
+  # This will also drop missing values
+  filter_at(
+    # All columns that start with 'pm25'
+    vars(starts_with("pm25")),
+    # Filtering such that only values 0:2000 are kept
+    any_vars(between(., 0, 2000))
+  ) %>% 
+  filter(
+    # Filtering temperature for -40:185
+    between(temperature, -40, 185),
+    # Filtering humidity for 0:100
+    between(humidity, 0, 100)
+  ) %>% 
+  # Creating variables for date and hour
+  mutate(
+    date = date(datetime),
+    hour = hour(datetime)
+  )
+```
+
+```{r corr_epa_factor}
+# Filter all dates in which there are fewer than 18/24 hr worth of measurements
+data_epa_hours <- data_pm25 %>% 
+  group_by(site_id, date, hour) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+  group_by(site_id, date) %>% 
+  count() %>% 
+  filter(n < 18)
+
+
+# Applying EPA correction factors
+data_pm25_epa <- data_pm25 %>% 
+  select(!c(pm25_atm_A, pm25_atm_B)) %>% 
+  # Removes values for days in which there are too few values
+  anti_join(data_epa_hours) %>% 
+  group_by(site_id, date) %>% 
+  mutate(
+    # Difference between A&B sensors
+    diff = pm25_A-pm25_B,
+    # Percentage difference between A&B sensors
+    per_diff = 100*(abs(pm25_A-pm25_B))/((pm25_A+pm25_B)/2),
+    drop = case_when(
+      # We will drop the following based on EPA recommendations
+      abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
+      # Fills all other values (the ones we'll keep) with false
+      TRUE ~ FALSE
+    )
+  ) %>% 
+  # Filtering out values which we have determined to drop
+  filter(drop != TRUE) %>% 
+  select(!c(drop, diff, per_diff)) %>% 
+  group_by(site_id, date) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+  rowwise() %>% 
+  mutate(
+    # Averaging the A and B monitors
+    pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
+    # US-wide correction factor published in 2020
+    epa_2020 = 0.524*pm25_cf1 - 0.0852*humidity + 5.72,
+    # US-wide correction factor published in late 2020
+    epa_2021 = case_when(
+      pm25_cf1 <= 343 ~ 0.52*pm25_cf1 - 0.086*humidity + 5.75,
+      pm25_cf1 > 343 ~ 0.46*pm25_cf1 + (3.93*10^(-4))*(pm25_cf1^2) +2.97
+    )
+  )
+
+remove(data_epa_hours)
+```
+
+```{r lrapa}
+data_pm25_lrapa <- data_pm25 %>% 
+  select(!c(temperature, humidity)) %>% 
+  group_by(site_id, date, hour) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+  rowwise() %>% 
+  mutate(
+    pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
+    pm25_atm = mean(c(pm25_atm_A, pm25_atm_B), na.rm = TRUE),
+    lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
+  ) %>% 
+  drop_na(lrapa)
+```
+
+```{r apply_dates_set}
+apply_dates <- function(dataset, starts, ends, tags){
+  
+  starts <- as.Date(starts)
+  ends <- as.Date(ends)
+  tags <- factor(tags)
+  
+  data_temp <- data.frame(starts, ends, tags) %>% 
+    arrange(starts) %>% 
+    mutate(date_tag = fct_inorder(tags)) %>% 
+    pivot_longer(cols = c(starts, ends), values_to = "date") %>% 
+    group_by(date_tag) %>% 
+    complete(date = full_seq(date, 1)) %>% 
+    select(!c(name, tags))
+  
+  dataset %>% 
+    left_join(data_temp) %>% 
+    drop_na(date_tag)
+}
+
+data_dated <- apply_dates(data_pm25_epa,
+                          c("2021-03-01", "2021-03-04"),
+                          c("2021-03-03", "2021-03-08"),
+                          c("Before", "After"))
+```
+
+
+```{r map_function}
+lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+lab_inout <- paste("Location:")
+
+map_q <- function(pm_data, location_data, correction = epa_2021,
+                  maptype = "toner-lite", zoom = 11, darken = 0.5, darken_color = "black"){
+  data_temp <- pm_data %>% 
+    ungroup() %>% 
+    group_by(site_id, date_tag) %>% 
+    summarize(mean = mean({{correction}}, na.rm=TRUE)) %>% 
+    left_join(location_data)
+  
+  qmplot(data = data_temp, x = longitude, y = latitude,
+         geom = "blank", maptype = maptype, zoom = zoom, darken = c(darken, darken_color)) +
+    facet_wrap(~date_tag) +
+    geom_point(
+      aes(
+        #size = mean,
+        #shape = DEVICE_LOCATIONTYPE,
+        fill = mean
+      ),
+      color = "white",
+      alpha = 0.85,
+      size = 3,
+      shape = 21
+    ) +
+    #scale_fill_viridis(option = "magma", begin = 0.2, end = 0.9, direction = -1) +
+    scale_fill_viridis(option = "viridis", direction = -1, end = 0.85) +
+    #scale_size_continuous() +
+    #scale_shape_manual(values = c("outside" = 21, "inside" = 23)) +
+    #guides(fill = guide_legend(), size = guide_legend()) +
+    theme_void() +
+    theme(
+      legend.position = "bottom",
+      legend.box = "vertical"
+    ) +
+    labs(
+      #size = lab_pm,
+      #shape = lab_inout,
+      fill = lab_pm
+    )
+}
+
+map_q(data_dated, data_meta)
+```
+
