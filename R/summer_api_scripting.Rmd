@@ -40,16 +40,16 @@ w <- -122.854
 state_code <- "OR"
 
 # Start and end dates
-startdate <- "2021-03-13"
-enddate <- "2021-03-16"
+startdate <- "2020-09-01"
+enddate <- "2020-09-30"
 
 # Run date grouping?
-run_dategrouping <- FALSE
+run_dategrouping <- TRUE
 # Date grouping categories
 if(run_dategrouping == TRUE){
-  dategroup_tags <- c("Before", "Later")
-  dategroup_starts <- c("2021-03-13", "2021-03-15")
-  dategroup_ends <- c("2021-03-14", "2021-03-16")
+  dategroup_tags <- c("Before", "Fire", "After")
+  dategroup_starts <- c("2020-09-01", "2020-09-10", "2020-09-20")
+  dategroup_ends <- c("2020-09-09", "2020-09-19", "2020-09-30")
 } else {
   print("Date grouping will not occur.")
 }
@@ -179,74 +179,88 @@ data_pm25 <- raw_data %>%
   mutate(
     date = date(datetime),
     #hour = hour(datetime)
-    hour = floor_date(datetime, unit = "hour")
+    date_hour = floor_date(datetime, unit = "hour")
   ) %>% 
-  select(site_id, datetime_utc, datetime, date, hour, everything())
+  select(site_id, datetime_utc, datetime, date, date_hour, everything())
 
 remove(adjust_timezone)
 ```
 
 ```{r corr_epa_factor}
+apply_epa <- function(dataset, groupings){
+  dataset %>% 
+    group_by_at({{groupings}}) %>% 
+    mutate(
+      # Difference between A&B sensors
+      diff = pm25_A-pm25_B,
+      # Percentage difference between A&B sensors
+      per_diff = 100*(abs(pm25_A-pm25_B))/((pm25_A+pm25_B)/2),
+      drop = case_when(
+        # We will drop the following based on EPA recommendations
+        abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
+        # Fills all other values (the ones we'll keep) with false
+        TRUE ~ FALSE
+        )
+      ) %>% 
+    # Filtering out values which we have determined to drop
+    filter(drop != TRUE) %>% 
+    select(!c(drop, diff, per_diff)) %>% 
+    group_by_at({{groupings}}) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    rowwise() %>% 
+    mutate(
+      # Averaging the A and B monitors
+      pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
+      # US-wide correction factor published in 2020
+      epa_2020 = 0.524*pm25_cf1 - 0.0852*humidity + 5.72,
+      # US-wide correction factor published in late 2020
+      epa_2021 = case_when(
+        pm25_cf1 <= 343 ~ 0.52*pm25_cf1 - 0.086*humidity + 5.75,
+        pm25_cf1 > 343 ~ 0.46*pm25_cf1 + (3.93*10^(-4))*(pm25_cf1^2) +2.97
+        )
+      )
+}
+
+data_hourly_epa <- data_pm25 %>% 
+  apply_epa(groupings = vars(site_id, date, date_hour))
+
 # Filter all dates in which there are fewer than 18/24 hr worth of measurements
-data_epa_hours <- data_pm25 %>% 
-  group_by(site_id, date, hour) %>% 
+data_epa_drop <- data_pm25 %>% 
+  group_by(site_id, date, date_hour) %>% 
   summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
   group_by(site_id, date) %>% 
   count() %>% 
   filter(n < 18)
 
+data_daily_epa <- data_pm25 %>% 
+  anti_join(data_epa_drop) %>% 
+  apply_epa(groupings = vars(site_id, date))
 
-# Applying EPA correction factors
-data_pm25_epa <- data_pm25 %>% 
-  select(!c(pm25_atm_A, pm25_atm_B)) %>% 
-  # Removes values for days in which there are too few values
-  anti_join(data_epa_hours) %>% 
-  group_by(site_id, date) %>% 
-  mutate(
-    # Difference between A&B sensors
-    diff = pm25_A-pm25_B,
-    # Percentage difference between A&B sensors
-    per_diff = 100*(abs(pm25_A-pm25_B))/((pm25_A+pm25_B)/2),
-    drop = case_when(
-      # We will drop the following based on EPA recommendations
-      abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
-      # Fills all other values (the ones we'll keep) with false
-      TRUE ~ FALSE
-    )
-  ) %>% 
-  # Filtering out values which we have determined to drop
-  filter(drop != TRUE) %>% 
-  select(!c(drop, diff, per_diff)) %>% 
-  group_by(site_id, date) %>% 
-  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
-  rowwise() %>% 
-  mutate(
-    # Averaging the A and B monitors
-    pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
-    # US-wide correction factor published in 2020
-    epa_2020 = 0.524*pm25_cf1 - 0.0852*humidity + 5.72,
-    # US-wide correction factor published in late 2020
-    epa_2021 = case_when(
-      pm25_cf1 <= 343 ~ 0.52*pm25_cf1 - 0.086*humidity + 5.75,
-      pm25_cf1 > 343 ~ 0.46*pm25_cf1 + (3.93*10^(-4))*(pm25_cf1^2) +2.97
-    )
-  )
 
-remove(data_epa_hours)
+remove(data_epa_drop)
 ```
 
 ```{r lrapa}
-data_pm25_lrapa <- data_pm25 %>% 
-  select(!c(temperature, humidity)) %>% 
-  group_by(site_id, date, hour) %>% 
-  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
-  rowwise() %>% 
-  mutate(
-    pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
-    pm25_atm = mean(c(pm25_atm_A, pm25_atm_B), na.rm = TRUE),
-    lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
-  ) %>% 
-  drop_na(lrapa)
+apply_lrapa <- function(dataset, groupings){
+  dataset %>% 
+    group_by_at({{groupings}}) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    rowwise() %>% 
+    mutate(
+      pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
+      pm25_atm = mean(c(pm25_atm_A, pm25_atm_B), na.rm = TRUE),
+      lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
+      ) %>% 
+    drop_na(lrapa)
+}
+
+data_hourly_lrapa <- data_pm25 %>% 
+  apply_lrapa(groupings = vars(site_id, date, date_hour))
+
+data_daily_lrapa <- data_pm25 %>% 
+  apply_lrapa(groupings = vars(site_id, date))
+
+remove(apply_lrapa)
 ```
 
 ```{r apply_dates_set}
@@ -270,8 +284,10 @@ apply_dates <- function(dataset, starts = dategroup_starts, ends = dategroup_end
 }
 
 if(run_dategrouping == TRUE){
-  data_pm25_epa <- apply_dates(data_pm25_epa)
-  data_pm25_lrapa <- apply_dates(data_pm25_lrapa)
+  data_hourly_epa <- apply_dates(data_hourly_epa)
+  data_hourly_lrapa <- apply_dates(data_hourly_lrapa)
+  data_daily_epa <- apply_dates(data_daily_epa)
+  data_daily_lrapa <- apply_dates(data_daily_lrapa)
   print("Data now grouped by provided date groupings.")
   remove(dategroup_starts, dategroup_ends, dategroup_tags)
 } else {
@@ -325,7 +341,7 @@ map_q <- function(pm_data, location_data = data_meta, correction = epa_2021,
     )
 }
 
-map_q(data_pm25_epa, point_size = 6)
-map_q(data_pm25_lrapa, point_size = 5, correction = lrapa)
+map_q(data_daily_epa, point_size = 6)
+map_q(data_daily_lrapa, point_size = 5, correction = lrapa)
 ```
 
