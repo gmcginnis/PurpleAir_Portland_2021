@@ -54,6 +54,15 @@ if(run_dategrouping == TRUE){
   print("Date grouping will not occur.")
 }
 
+# Run hour grouping?
+run_hourgrouping <- TRUE
+# Hour grouping categories
+if(run_hourgrouping == TRUE){
+  hourgroup_tags <- c("Morning", "Afternoon", "Evening", "Night")
+  hourgroup_starts <- c(5, 12, 17, 21)
+} else {
+  print("Hour grouping will not occur.")
+}
 ```
 
 ```{r getting_pas}
@@ -71,13 +80,13 @@ get_area_pas <- function(state_code = NULL, w, e, s, n){
 
 pas_area <- get_area_pas(state_code = state_code, w = w, e = e, s = s, n = n)
 
+# Cleaning environment
 remove(get_area_pas, state_code, n, e, s, w)
 ```
 
 ```{r getting_pat}
-# Setup
+# Setup for iteration
 ids <- pas_getDeviceDeploymentIDs(pas_area)
-#timezone <- unique(pas_area$timezone)
 patList <- list()
 idCount <- length(pas_area)
 count <- 0 
@@ -89,17 +98,15 @@ for (id in ids[1:idCount]) {
   count <- count + 1
   print(sprintf("Working on %s (%d/%d) ...", id, count, idCount))
   
-  # Use a try-block in case you get "no data" errors
+  # Use a try-block in case we get "no data" errors
   result <- try({
     
-    # Here we show the full function signature so you can see all possible arguments
     patList[[id]] <- pat_createNew(
       id = id,
-      label = NULL,        # not needed if you have the id
+      label = NULL,        # Not needed if we have the ID
       pas = pas_area,
       startdate = startdate,
       enddate = enddate,
-      #timezone = timezone,
       baseUrl = "https://api.thingspeak.com/channels/",
       verbose = FALSE
     )
@@ -116,6 +123,7 @@ for (id in ids[1:idCount]) {
 # Review
 print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
 
+# Cleaning environment
 remove(startdate, enddate, idCount, count, successCount, ids, id, result)
 ```
 
@@ -183,6 +191,7 @@ data_pm25 <- raw_data %>%
   ) %>% 
   select(site_id, datetime_utc, datetime, date, date_hour, everything())
 
+# Cleaning environment
 remove(adjust_timezone)
 ```
 
@@ -236,8 +245,8 @@ data_daily_epa <- data_pm25 %>%
   anti_join(data_epa_drop) %>% 
   apply_epa(groupings = vars(site_id, date))
 
-
-remove(data_epa_drop)
+# Cleaning environment
+remove(apply_epa, data_epa_drop)
 ```
 
 ```{r lrapa}
@@ -260,7 +269,19 @@ data_hourly_lrapa <- data_pm25 %>%
 data_daily_lrapa <- data_pm25 %>% 
   apply_lrapa(groupings = vars(site_id, date))
 
+# Cleaning environment
 remove(apply_lrapa)
+```
+
+```{r group_sets}
+data_daily <- data_daily_epa %>% 
+  full_join(data_daily_lrapa)
+
+data_hourly <- data_hourly_epa %>% 
+  full_join(data_hourly_lrapa)
+
+# Cleaning environment
+remove(data_daily_lrapa, data_daily_epa, data_hourly_lrapa, data_hourly_epa)
 ```
 
 ```{r apply_dates_set}
@@ -284,35 +305,70 @@ apply_dates <- function(dataset, starts = dategroup_starts, ends = dategroup_end
 }
 
 if(run_dategrouping == TRUE){
-  data_hourly_epa <- apply_dates(data_hourly_epa)
-  data_hourly_lrapa <- apply_dates(data_hourly_lrapa)
-  data_daily_epa <- apply_dates(data_daily_epa)
-  data_daily_lrapa <- apply_dates(data_daily_lrapa)
+  data_hourly <- apply_dates(data_hourly)
+  data_daily <- apply_dates(data_daily)
   print("Data now grouped by provided date groupings.")
   remove(dategroup_starts, dategroup_ends, dategroup_tags)
 } else {
   print("Date groups not applied.")
 }
 
+# Cleaning environment
 remove(apply_dates, run_dategrouping)
 ```
+
+```{r apply_hour_tags}
+apply_hours <- function(dataset, starts = hourgroup_starts, tags = hourgroup_tags){
+  tags <- factor(tags)
+  
+  hours_in_day <- data.frame(starts = 0:23)
+  
+  data_temp <- data.frame(starts, tags) %>% 
+    arrange(starts) %>% 
+    mutate(hour_tag = fct_inorder(tags)) %>% 
+    complete(starts = full_seq(starts, 1)) %>% 
+    right_join(hours_in_day) %>% 
+    rename(hour = starts) %>% 
+    fill(hour_tag) %>% 
+    select(!tags)
+  
+  dataset %>% 
+    mutate(hour = hour(date_hour)) %>% 
+    left_join(data_temp) %>% 
+    select(!hour)
+}
+
+if(run_hourgrouping == TRUE){
+  data_hourly <- apply_hours(data_hourly)
+  print("Data now grouped by provided hour groupings.")
+  remove(hourgroup_starts, hourgroup_tags)
+} else {
+  print("Hour groups not applied.")
+}
+
+# Cleaning environment
+remove(apply_hours, run_hourgrouping)
+```
+
 
 ```{r map_function}
 lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
 lab_inout <- paste("Location:")
 
-map_q <- function(pm_data, location_data = data_meta, correction = epa_2021,
+map_q <- function(pm_data, correction = epa_2021, grouping_var = date_tag, location_data = data_meta,
                   maptype = "toner-lite", zoom = 11, darken = 0.5, darken_color = "black",
                   point_size = 3){
+  
   data_temp <- pm_data %>% 
     ungroup() %>% 
-    group_by(site_id, date_tag) %>% 
-    summarize(mean = mean({{correction}}, na.rm=TRUE)) %>% 
+    group_by_at(vars(site_id, {{grouping_var}})) %>% 
+    summarize(mean = mean({{correction}}, na.rm = TRUE)) %>% 
     left_join(location_data)
   
   qmplot(data = data_temp, x = longitude, y = latitude,
          geom = "blank", maptype = maptype, zoom = zoom, darken = c(darken, darken_color)) +
-    facet_wrap(~date_tag) +
+    #facet_wrap(paste("~", facet)) +
+    facet_wrap(vars({{grouping_var}})) +
     geom_point(
       aes(
         #size = mean,
@@ -341,7 +397,8 @@ map_q <- function(pm_data, location_data = data_meta, correction = epa_2021,
     )
 }
 
-map_q(data_daily_epa, point_size = 6)
-map_q(data_daily_lrapa, point_size = 5, correction = lrapa)
+map_q(data_daily)
+map_q(data_hourly, grouping_var = hour_tag)
+
 ```
 
