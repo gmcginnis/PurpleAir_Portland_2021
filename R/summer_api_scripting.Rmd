@@ -323,19 +323,31 @@ apply_hours <- function(dataset, starts = hourgroup_starts, tags = hourgroup_tag
   
   hours_in_day <- data.frame(starts = 0:23)
   
+  # data_temp <- data.frame(starts, tags) %>% 
+  #   arrange(starts) %>% 
+  #   mutate(hour_tag = fct_inorder(tags)) %>% 
+  #   complete(starts = full_seq(starts, 1)) %>% 
+  #   right_join(hours_in_day) %>% 
+  #   rename(hour = starts) %>% 
+  #   fill(hour_tag) %>% 
+  #   select(!tags)
   data_temp <- data.frame(starts, tags) %>% 
+    mutate(
+      ends = lead(starts - 1),
+      ends = replace_na(ends, starts[1]-1),
+      tags = paste0(tags, " (", starts, "-", ends, ")")
+    ) %>% 
     arrange(starts) %>% 
-    mutate(hour_tag = fct_inorder(tags)) %>% 
-    complete(starts = full_seq(starts, 1)) %>% 
-    right_join(hours_in_day) %>% 
-    rename(hour = starts) %>% 
-    fill(hour_tag) %>% 
-    select(!tags)
+    mutate(hour_tag = fct_inorder(tags)) %>%
+    complete(starts = full_seq(starts, 1)) %>%
+    right_join(hours_in_day) %>%
+    rename(hour = starts) %>%
+    fill(hour_tag) %>%
+    select(!c(tags, ends))
   
   dataset %>% 
     mutate(hour = hour(date_hour)) %>% 
-    left_join(data_temp) %>% 
-    select(!hour)
+    left_join(data_temp)
 }
 
 if(run_hourgrouping == TRUE){
@@ -352,22 +364,31 @@ remove(apply_hours, run_hourgrouping)
 
 
 ```{r map_function}
-lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
-lab_inout <- paste("Location:")
-
-map_q <- function(pm_data, correction = epa_2021, grouping_var = date_tag, location_data = data_meta,
-                  maptype = "toner-lite", zoom = 11, darken = 0.5, darken_color = "black",
-                  point_size = 3){
+map_q <- function(pm_data, value, grouping_var = NULL, exclude = NULL, location_data = data_meta,
+                  maptype = "toner-lite", zoom = 11, tint = 0.5, tint_color = "black",
+                  point_size = 3, viridis = "viridis"){
   
   data_temp <- pm_data %>% 
     ungroup() %>% 
     group_by_at(vars(site_id, {{grouping_var}})) %>% 
-    summarize(mean = mean({{correction}}, na.rm = TRUE)) %>% 
+    summarize(mean = mean({{value}}, na.rm = TRUE)) %>% 
+    drop_na(mean) %>% 
     left_join(location_data)
   
+  
+  to_exclude <- paste(exclude, collapse = "|")
+  
+  if(is.null(exclude) == FALSE){
+    data_temp <- data_temp %>% 
+      filter(!str_detect({{grouping_var}}, to_exclude))
+  }
+  
+  # Labels for map
+  lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  lab_caption <- paste("Data grouped by:", (colnames(pm_data %>% select({{grouping_var}})))[1])
+  
   qmplot(data = data_temp, x = longitude, y = latitude,
-         geom = "blank", maptype = maptype, zoom = zoom, darken = c(darken, darken_color)) +
-    #facet_wrap(paste("~", facet)) +
+         geom = "blank", maptype = maptype, zoom = zoom, darken = c(tint, tint_color)) +
     facet_wrap(vars({{grouping_var}})) +
     geom_point(
       aes(
@@ -380,8 +401,13 @@ map_q <- function(pm_data, correction = epa_2021, grouping_var = date_tag, locat
       size = point_size,
       shape = 21
     ) +
-    #scale_fill_viridis(option = "magma", begin = 0.2, end = 0.9, direction = -1) +
-    scale_fill_viridis(option = "viridis", direction = -1, end = 0.85) +
+    #scale_fill_viridis(option = {{viridis}}, direction = -1, end = 0.85) +
+    scale_fill_viridis(
+      option = {{viridis}},
+      direction = -1,
+      end = 0.85,
+      limits = c(0, NA)
+    ) +
     #scale_size_continuous() +
     #scale_shape_manual(values = c("outside" = 21, "inside" = 23)) +
     #guides(fill = guide_legend(), size = guide_legend()) +
@@ -390,15 +416,25 @@ map_q <- function(pm_data, correction = epa_2021, grouping_var = date_tag, locat
       legend.position = "bottom",
       legend.box = "vertical"
     ) +
+    # guides(
+    #   fill = guide_colorbar(
+    #     barwidth = 10,
+    #     barheight = 0.5,
+    #     
+    #   )
+    # )+
     labs(
       #size = lab_pm,
       #shape = lab_inout,
-      fill = lab_pm
+      fill = lab_pm,
+      caption = lab_caption
     )
 }
 
-map_q(data_daily)
-map_q(data_hourly, grouping_var = hour_tag)
+map_q(data_daily, value = epa_2021, grouping_var = date_tag)
+map_q(data_hourly, value = lrapa, grouping_var = hour_tag, exclude = "Afternoon")
 
+map_q(data_hourly, value = lrapa, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
+      maptype = "terrain", tint = 0.3, tint_color = "orange", viridis = "magma")
 ```
 
