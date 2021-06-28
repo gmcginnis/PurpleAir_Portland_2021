@@ -43,6 +43,10 @@ state_code <- "OR"
 startdate <- "2020-09-01"
 enddate <- "2020-09-30"
 
+# Grab data from outdoor and/or indoor sensors
+include_outside <- TRUE
+include_inside <- TRUE
+
 # Run date grouping?
 run_dategrouping <- TRUE
 # Date grouping categories
@@ -86,9 +90,30 @@ remove(get_area_pas, state_code, n, e, s, w)
 
 ```{r getting_pat}
 # Setup for iteration
-ids <- pas_getDeviceDeploymentIDs(pas_area)
+ids_outside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = TRUE)
+ids_inside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = FALSE)
+
+if(include_outside == FALSE & include_inside == FALSE){
+  inout_report <- ("INPUT ERROR: Please set `include_outside` and/or `include_inside` to TRUE.")
+}
+if(include_outside == TRUE & include_inside == TRUE){
+  ids <- c(ids_outside, ids_inside)
+  inout_report <- ("Both indoor and outdoor sensor data will be loaded.")
+}
+if(include_outside == TRUE & include_inside == FALSE){
+  ids <- ids_outside
+  inout_report <- ("Only outdoor sensor data will be loaded.")
+}
+if(include_outside == FALSE & include_inside == TRUE){
+  ids <- ids_inside
+  inout_report <- ("Only indoor sensor data will be loaded.")
+}
+print(inout_report)
+remove(ids_outside, ids_inside, inout_report)
+
 patList <- list()
-idCount <- length(pas_area)
+#idCount <- length(pas_area)
+idCount <- length(ids)
 count <- 0 
 successCount <- 0
 
@@ -138,6 +163,8 @@ remove(patList_transposed)
 ```
 
 ```{r timezone_function}
+# Time zones are recorded when downloading data. Time stamps are reported in UTC. The following will convert the time stamps to said time zone.
+# If more than one time zone is reported in the data, the conversion will use the time zone most frequently used in the data set. This is because no more than one time zone can be applied to a date time variable.
 adjust_timezone <- function(dataset, location_data = raw_meta){
   if(length(unique(location_data$timezone)) > 1){
   print("Multiple time zones reported. Timestamp will be based on the most frequent time zone reported.")
@@ -160,6 +187,8 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
 ```
 
 ```{r qc_sets}
+# Basic subsetting and quality control
+
 data_meta <- raw_meta %>% 
   # Selecting only variables of interest, to save on storage
   select(site_id, DEVICE_LOCATIONTYPE, label, longitude, latitude, timezone)
@@ -181,12 +210,11 @@ data_pm25 <- raw_data %>%
     # Filtering humidity for 0:100
     between(humidity, 0, 100)
   ) %>% 
-  # Adjusting to be local time zone
+  # Adjusting to be reported time zone (see above function)
   adjust_timezone() %>% 
   # Creating variables for date and hour
   mutate(
     date = date(datetime),
-    #hour = hour(datetime)
     date_hour = floor_date(datetime, unit = "hour")
   ) %>% 
   select(site_id, datetime_utc, datetime, date, date_hour, everything())
@@ -381,12 +409,13 @@ remove(apply_hours, run_hourgrouping)
 ```{r map_function}
 # FUNCTION
 # Required inputs: pm_data (df), value (column of PM2.5 data w/in df to map), location_data (lat/long data to be joined to df; default: data_meta)
-# Optional inputs: grouping variables (1 or 2) w/ respective custom exclusions
+# Optional inputs: grouping variables (1 or 2) w/ respective custom exclusions; filter for indoor/outdoor data
 # Other customization for map: type (stamen), zoom, tint & color, point size, color scale (virids)
 
 map_q <- function(pm_data, value, location_data = data_meta,
                   grouping_var = NULL, exclude = NULL,
                   grouping_var_2 = NULL, exclude_2 = NULL,
+                  outside = include_outside, inside = include_inside,
                   maptype = "toner-lite", zoom = 11, tint = 0.5, tint_color = "black",
                   point_size = 3, viridis = "viridis"){
   
@@ -397,19 +426,40 @@ map_q <- function(pm_data, value, location_data = data_meta,
     drop_na(mean) %>% 
     left_join(location_data)
   
+  print("Data now grouped and averaged. Location data added.")
+  
   # Custom filtering
   if(is.null(exclude) == FALSE){
     to_exclude <- paste(exclude, collapse = "|")
-    
     data_temp <- data_temp %>% 
       filter(!str_detect({{grouping_var}}, to_exclude))
+    #print("Exclusions for grouping variable 1 applied.")
+    print(paste("Excluding", exclude, "from", deparse(substitute(grouping_var))))
   }
   if(is.null(exclude_2) == FALSE){
     to_exclude_2 <- paste(exclude_2, collapse = "|")
-    
     data_temp <- data_temp %>% 
       filter(!str_detect({{grouping_var_2}}, to_exclude_2))
+    #print("Exclusions for grouping variable 2 applied.")
+    #print(paste("Excluding the following from", grouping_var_2, "applied:", exclude_2))
+    print(paste("Excluding", exclude_2, "from", deparse(substitute(grouping_var_2))))
   }
+  
+  shapes_inout <- c("outside" = 21, "inside" = 23)
+  
+  if(outside == FALSE){
+    data_temp <- data_temp %>% 
+      filter(DEVICE_LOCATIONTYPE != "outside")
+    print("Outdoor sensor data has been filtered out")
+    shapes_inout <- c("inside" = 23)
+  }
+  if(inside == FALSE){
+    data_temp <- data_temp %>% 
+      filter(DEVICE_LOCATIONTYPE != "inside")
+    print("Indoor sensor data has been filtered out")
+    shapes_inout <- c("outside" = 21)
+  }
+  
   
   # Legend label
   lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
@@ -418,11 +468,11 @@ map_q <- function(pm_data, value, location_data = data_meta,
          geom = "blank", maptype = maptype, zoom = zoom, darken = c(tint, tint_color)) +
     facet_wrap(vars({{grouping_var}})) +
     geom_point(
-      aes(fill = mean),
+      aes(fill = mean, shape = DEVICE_LOCATIONTYPE),
       color = "white",
       alpha = 0.85,
       size = point_size,
-      shape = 21
+      #shape = 21
     ) +
     scale_fill_viridis(
       option = {{viridis}},
@@ -431,14 +481,19 @@ map_q <- function(pm_data, value, location_data = data_meta,
       limits = c(0, NA)
     ) +
     theme_void() +
+    scale_shape_manual(values = shapes_inout) +
     theme(
       legend.position = "bottom",
       legend.box = "vertical"
-    ) +
+    ) + 
+    guides(shape = guide_legend(override.aes = list(fill="black"))) +
     labs(
       fill = lab_pm,
+      shape = "Monitor location:",
       caption = "Data not grouped."
     )
+  
+  print("Base plot created.")
   
   ## Faceting by grouping variable(s) and applying an appropriate caption to reflect the grouping
   # Facet wrap if 1 grouping variable provided
@@ -453,6 +508,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
           (colnames(pm_data %>% select({{grouping_var}})))[1]
         )
       )
+    print(paste("Plot now faceted by", deparse(substitute(grouping_var))))
   }
   # Facet grid if 2 grouping variables provided
   if(deparse(substitute(grouping_var)) != "NULL" &
@@ -473,7 +529,14 @@ map_q <- function(pm_data, value, location_data = data_meta,
           deparse(substitute(grouping_var_2))
           )
       )
+    print(paste("Plot now faceted by",
+                deparse(substitute(grouping_var)),
+                "and",
+                deparse(substitute(grouping_var_2))
+                ))
   }
+  
+  print("Final plot created.")
   
   # Returning the final plot
   plot
@@ -482,9 +545,13 @@ map_q <- function(pm_data, value, location_data = data_meta,
 
 ```{r map_tests, eval = FALSE}
 map_q(data_daily, value = epa_2021, grouping_var = date_tag)
+
+map_q(data_daily, value = epa_2021, grouping_var = date_tag, outside = FALSE)
+
 map_q(data_daily, value = lrapa, grouping_var = date_tag, exclude = "Fire")
 map_q(data_hourly, value = lrapa, grouping_var = date_tag, grouping_var_2 = hour_tag)
 
 map_q(data_hourly, value = lrapa, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
       maptype = "terrain", tint = 0.3, tint_color = "orange", viridis = "magma")
 ```
+
