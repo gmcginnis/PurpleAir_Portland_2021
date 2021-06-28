@@ -468,9 +468,9 @@ map_q <- function(pm_data, value, location_data = data_meta,
       labs(
         caption = paste(
           "Data grouped by",
-          (colnames(pm_data %>% select({{grouping_var}})))[1],
+          deparse(substitute(grouping_var)),
           "and",
-          (colnames(pm_data %>% select({{grouping_var_2}})))[1]
+          deparse(substitute(grouping_var_2))
           )
       )
   }
