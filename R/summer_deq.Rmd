@@ -16,38 +16,70 @@ library(lubridate)
 ```{r inputs}
 input_deq_path <- "data/deq/Portland SE Lafayette.xlsx"
 
+# Input of renames. Those listed will be included in the final data frame.
+# Time stamp will be automatically renamed and kept.
 input_deq_renames <- c(
-  "Date Time" = "date_time",
   "PM2.5" = "pm2.5_deq",
-  "Temperature" = "temp_c",
+  "Temperature" = "temperature_c",
   "Relative Humidity" = "rh",
-  "Wind Speed (mph)" = "wind_mph",
-  "Sigma Theta" = "sigma_theta"
+  "Wind Direction" = "wind_direction",
+  "Wind Speed (mph)" = "wind_mph"
 )
 ```
 
 
 ```{r data_import}
+
+# Creating a list of variable names
 data_deq_names <- read_excel(input_deq_path,
+                             # Selecting sheet 1:
                              sheet = 1,
+                             # Skipping the empty rows at the top:
                              skip = 2,
+                             # Selecting 0 observations:
                              n_max = 0) %>% names()
 
+# Creating a data frame of the data
 data_deq_raw <- read_excel(input_deq_path,
+                           # Selecting sheet 1:
                            sheet = 1,
+                           # Skipping the topmost rows naming the variables, etc.:
                            skip = 4,
+                           # NAs are reported with the following symbol in the Excel file:
                            na = "----",
+                           # Setting column names to be those listed above:
                            col_names = data_deq_names)
 
+# Data frame of units, for reference if needed.
+read_excel(input_deq_path,
+           # Selecting sheet 1:
+           sheet = 1,
+           # Skipping the empty rows at the top:
+           skip = 2,
+           # Selecting 1 "observation" (next row):
+           n_max = 1)
+
+# Cleaning environment
 remove(data_deq_names)
 ```
 
 ```{r data_wrangling}
 data_deq_wrangled <- data_deq_raw %>% 
-    mutate(`Date Time` = parse_date_time(`Date Time`,
-                                       "%H:%M %m/%d/%Y",
-                                       tz = "Etc/GMT+8")) %>% 
+  mutate(
+    # DEQ reports time stamps in STANDARD time, meaning DST is not accounted for.
+    # Using Etc/GMT+8 here will apply the appropriate -8
+    datetime_standard = parse_date_time(`Date Time`, "%H:%M %m/%d/%Y", tz = "Etc/GMT+8"),
+    # The following will adjust time stamps for DST appropriately:
+    `Date Time` = with_tz(datetime_standard, tzone = "America/Los_Angeles"),
+    date = date(`Date Time`)
+  ) %>% 
+  rename(date_hour = `Date Time`) %>% 
+  # Renaming variables based on inputs at the top
   plyr::rename(warn_missing = FALSE, input_deq_renames) %>% 
-  select(intersect(all_of(input_deq_renames), names(.)))
+  # Selecting only renamed variables in addition to time stamps
+  select(c(date, date_hour, intersect(all_of(input_deq_renames), names(.)), datetime_standard))
+
+# Cleaning environment
+remove(data_deq_raw, input_deq_path, input_deq_renames)
 ```
 
