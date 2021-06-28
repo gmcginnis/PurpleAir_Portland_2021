@@ -23,7 +23,7 @@ input_deq_renames <- c(
   "Temperature" = "temperature_c",
   "Relative Humidity" = "rh",
   "Wind Direction" = "wind_direction",
-  "Wind Speed (mph)" = "wind_mph"
+  "Wind Speed (mph)" = "wind_speed"
 )
 ```
 
