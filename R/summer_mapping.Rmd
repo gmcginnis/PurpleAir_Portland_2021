@@ -199,3 +199,232 @@ map_full <- function(input_data, input_map, correction = epa_2021){
 
 map_full(data_dated, pdx_map, correction = epa_2021)
 ```
+
+```{r map_function, eval = FALSE}
+map_q <- function(pm_data, value, grouping_var = NULL, exclude = NULL, location_data = data_meta,
+                  maptype = "toner-lite", zoom = 11, tint = 0.5, tint_color = "black",
+                  point_size = 3, viridis = "viridis"){
+  
+  data_temp <- pm_data %>% 
+    ungroup() %>% 
+    group_by_at(vars(site_id, {{grouping_var}})) %>% 
+    summarize(mean = mean({{value}}, na.rm = TRUE)) %>% 
+    drop_na(mean) %>% 
+    left_join(location_data)
+  
+  
+  to_exclude <- paste(exclude, collapse = "|")
+  
+  if(is.null(exclude) == FALSE){
+    data_temp <- data_temp %>% 
+      filter(!str_detect({{grouping_var}}, to_exclude))
+  }
+  
+  # Labels for map
+  lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  lab_caption <- paste("Data grouped by:", (colnames(pm_data %>% select({{grouping_var}})))[1])
+  
+  qmplot(data = data_temp, x = longitude, y = latitude,
+         geom = "blank", maptype = maptype, zoom = zoom, darken = c(tint, tint_color)) +
+    facet_wrap(vars({{grouping_var}})) +
+    geom_point(
+      aes(
+        #size = mean,
+        #shape = DEVICE_LOCATIONTYPE,
+        fill = mean
+      ),
+      color = "white",
+      alpha = 0.85,
+      size = point_size,
+      shape = 21
+    ) +
+    #scale_fill_viridis(option = {{viridis}}, direction = -1, end = 0.85) +
+    scale_fill_viridis(
+      option = {{viridis}},
+      direction = -1,
+      end = 0.85,
+      limits = c(0, NA)
+    ) +
+    #scale_size_continuous() +
+    #scale_shape_manual(values = c("outside" = 21, "inside" = 23)) +
+    #guides(fill = guide_legend(), size = guide_legend()) +
+    theme_void() +
+    theme(
+      legend.position = "bottom",
+      legend.box = "vertical"
+    ) +
+    # guides(
+    #   fill = guide_colorbar(
+    #     barwidth = 10,
+    #     barheight = 0.5,
+    #     
+    #   )
+    # )+
+    labs(
+      #size = lab_pm,
+      #shape = lab_inout,
+      fill = lab_pm,
+      caption = lab_caption
+    )
+}
+```
+
+```{r map_tests, eval = FALSE}
+map_q(data_daily, value = epa_2021, grouping_var = date_tag)
+map_q(data_hourly, value = lrapa, grouping_var = hour_tag, exclude = "Afternoon")
+map_q(data_daily, value = lrapa, grouping_var = date_tag, exclude = "Fire")
+
+map_q(data_hourly, value = lrapa, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
+      maptype = "terrain", tint = 0.3, tint_color = "orange", viridis = "magma")
+```
+
+```{r function_testing, eval = FALSE}
+testing_function <- function(first_var, second_var = NULL){
+  plot <- diamonds %>% 
+    filter(color == "E") %>% 
+    ggplot(aes(price, depth)) +
+    geom_point()
+  
+  if(deparse(substitute(first_var)) != "NULL" &
+     deparse(substitute(second_var)) == "NULL"
+    ){
+    plot <- plot +
+      facet_wrap(vars({{first_var}}))
+  }
+  
+  if(deparse(substitute(second_var)) != "NULL" &
+     deparse(substitute(second_var)) != "NULL"
+     ){
+    plot <- plot +
+      facet_grid(
+      formula(paste(
+        vars({{first_var}}),
+        "~",
+        vars({{second_var}})
+      ))
+    )
+  }
+  plot
+}
+testing_function(clarity)
+testing_function(clarity, cut)
+
+
+map_testing <- function(pm_data, value, grouping_var = NULL, exclude = NULL,
+                        location_data = data_meta,
+                  maptype = "toner-lite", zoom = 11, tint = 0.5, tint_color = "black",
+                  point_size = 3, viridis = "viridis",
+                  grouping_var_2 = NULL, exclude_2 = NULL){
+  
+  data_temp <- pm_data %>% 
+    ungroup() %>% 
+    group_by_at(vars(site_id, {{grouping_var}}, {{grouping_var_2}})) %>% 
+    summarize(mean = mean({{value}}, na.rm = TRUE)) %>% 
+    drop_na(mean) %>% 
+    left_join(location_data)
+  
+  
+  if(is.null(exclude) == FALSE){
+    to_exclude <- paste(exclude, collapse = "|")
+    
+    data_temp <- data_temp %>% 
+      filter(!str_detect({{grouping_var}}, to_exclude))
+  }
+  if(is.null(exclude_2) == FALSE){
+    to_exclude_2 <- paste(exclude_2, collapse = "|")
+    
+    data_temp <- data_temp %>% 
+      filter(!str_detect({{grouping_var_2}}, to_exclude_2))
+  }
+  
+  # Labels for map
+  lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  #deparse(substitute(second_var)) != "NULL"
+  # if(deparse(substitute(grouping_var)) != "NULL" & deparse(substitute(grouping_var_2)) == "NULL"){
+  #   lab_caption <- paste("Data grouped by:",
+  #                        (colnames(pm_data %>% select({{grouping_var}})))[1]
+  #                        )
+  # }
+  # if(deparse(substitute(grouping_var)) != "NULL" & deparse(substitute(grouping_var_2)) != "NULL"){
+  #   lab_caption <- paste("Data grouped by:",
+  #                        (colnames(pm_data %>% select({{grouping_var}})))[1],
+  #                        "&",
+  #                        (colnames(pm_data %>% select({{grouping_var_2}})))[1]
+  #                        )
+  # }
+  # if(deparse(substitute(grouping_var)) == "NULL" & deparse(substitute(grouping_var_2)) == "NULL"){
+  #   lab_caption <- "Data not grouped."
+  # }
+  
+  plot <- qmplot(data = data_temp, x = longitude, y = latitude,
+         geom = "blank", maptype = maptype, zoom = zoom, darken = c(tint, tint_color)) +
+    #facet_wrap(vars({{grouping_var}}, {{grouping_var_2}})) +
+    geom_point(
+      aes(
+        fill = mean
+      ),
+      color = "white",
+      alpha = 0.85,
+      size = point_size,
+      shape = 21
+    ) +
+    scale_fill_viridis(
+      option = {{viridis}},
+      direction = -1,
+      end = 0.85,
+      limits = c(0, NA)
+    ) +
+    theme_void() +
+    theme(
+      legend.position = "bottom",
+      legend.box = "vertical"
+    ) +
+    labs(
+      caption = "Data not grouped."
+    )
+  
+  if(deparse(substitute(grouping_var)) != "NULL" &
+     deparse(substitute(grouping_var_2)) == "NULL"
+    ){
+    plot <- plot +
+      facet_wrap(vars({{grouping_var}})) +
+      labs(
+        caption = paste(
+          "Data grouped by:",
+          (colnames(pm_data %>% select({{grouping_var}})))[1]
+        )
+      )
+  }
+  
+  if(deparse(substitute(grouping_var)) != "NULL" &
+     deparse(substitute(grouping_var_2)) != "NULL"
+     ){
+    plot <- plot +
+      facet_grid(
+      formula(paste(
+        vars({{grouping_var}}),
+        "~",
+        vars({{grouping_var_2}})
+      ))) +
+      labs(
+        caption = paste(
+          "Data grouped by:",
+          (colnames(pm_data %>% select({{grouping_var}})))[1],
+          "&",
+          (colnames(pm_data %>% select({{grouping_var_2}})))[1]
+          )
+      )
+  }
+  plot
+}
+
+map_testing(pm_data = data_hourly, value = lrapa, grouping_var = date_tag, grouping_var_2 = hour_tag)
+map_testing(pm_data = data_hourly, value = lrapa, grouping_var = hour_tag, grouping_var_2 = date_tag)
+map_testing(pm_data = data_hourly, value = lrapa, grouping_var = date_tag, exclude = "Before")
+
+map_testing(pm_data = data_hourly, value = lrapa, grouping_var = date_tag)
+map_testing(pm_data = data_hourly, value = lrapa)
+```
+
+
+
