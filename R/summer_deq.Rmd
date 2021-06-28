@@ -64,7 +64,7 @@ remove(data_deq_names)
 ```
 
 ```{r data_wrangling}
-data_deq_wrangled <- data_deq_raw %>% 
+data_deq <- data_deq_raw %>% 
   mutate(
     # DEQ reports time stamps in STANDARD time, meaning DST is not accounted for.
     # Using Etc/GMT+8 here will apply the appropriate -8
