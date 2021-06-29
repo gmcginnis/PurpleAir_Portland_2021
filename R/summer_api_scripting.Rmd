@@ -70,9 +70,12 @@ if(run_hourgrouping == TRUE){
 ```
 
 ```{r getting_pas}
-get_area_pas <- function(state_code = NULL, w, e, s, n){
+get_area_pas <- function(state_code = NULL, w, e, s, n, datestamp = enddate){
   setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
-  pas <- pas_load()
+  pas <- pas_load(
+    archival = TRUE,
+    datestamp = str_replace_all(as.character(datestamp), "-", "")
+  )
   if(is.null(state_code) == TRUE){
     pas_state <- pas
   } else {
@@ -366,14 +369,6 @@ apply_hours <- function(dataset, starts = hourgroup_starts, tags = hourgroup_tag
   
   hours_in_day <- data.frame(starts = 0:23)
   
-  # data_temp <- data.frame(starts, tags) %>% 
-  #   arrange(starts) %>% 
-  #   mutate(hour_tag = fct_inorder(tags)) %>% 
-  #   complete(starts = full_seq(starts, 1)) %>% 
-  #   right_join(hours_in_day) %>% 
-  #   rename(hour = starts) %>% 
-  #   fill(hour_tag) %>% 
-  #   select(!tags)
   data_temp <- data.frame(starts, tags) %>% 
     mutate(
       ends = lead(starts - 1),
@@ -419,6 +414,10 @@ map_q <- function(pm_data, value, location_data = data_meta,
                   maptype = "toner-lite", zoom = 11, tint = 0.5, tint_color = "black",
                   point_size = 3, viridis = "viridis"){
   
+  # Warning message and halting execution if required input is missing.
+  if(missing(value) == TRUE) stop ("ERROR in argument 'value': Missing input, with no default. Execution haulted. Please input a valid PM2.5 variable (e.g. epa_2021).")
+  
+  # Wrangling based on provided inputs
   data_temp <- pm_data %>% 
     ungroup() %>% 
     group_by_at(vars(site_id, {{grouping_var}}, {{grouping_var_2}})) %>% 
@@ -428,51 +427,53 @@ map_q <- function(pm_data, value, location_data = data_meta,
   
   print("Data now grouped and averaged. Location data added.")
   
-  # Custom filtering
+  # Custom filtering: exclusions for input categories
   if(is.null(exclude) == FALSE){
     to_exclude <- paste(exclude, collapse = "|")
     data_temp <- data_temp %>% 
       filter(!str_detect({{grouping_var}}, to_exclude))
-    #print("Exclusions for grouping variable 1 applied.")
-    print(paste("Excluding", exclude, "from", deparse(substitute(grouping_var))))
+    print(paste("Excluded", exclude, "from", deparse(substitute(grouping_var))))
   }
   if(is.null(exclude_2) == FALSE){
     to_exclude_2 <- paste(exclude_2, collapse = "|")
     data_temp <- data_temp %>% 
       filter(!str_detect({{grouping_var_2}}, to_exclude_2))
-    #print("Exclusions for grouping variable 2 applied.")
-    #print(paste("Excluding the following from", grouping_var_2, "applied:", exclude_2))
-    print(paste("Excluding", exclude_2, "from", deparse(substitute(grouping_var_2))))
+    print(paste("Excluded", exclude_2, "from", deparse(substitute(grouping_var_2))))
   }
   
+  # Default shapes for inside/outside
   shapes_inout <- c("outside" = 21, "inside" = 23)
   
+  # Custom filtering: exclusions for inside/outside
+  # Will also override shape arguments to prevent excluded category from showing in the legend
   if(outside == FALSE){
     data_temp <- data_temp %>% 
       filter(DEVICE_LOCATIONTYPE != "outside")
-    print("Outdoor sensor data has been filtered out")
+    print("Excluded outdoor data")
     shapes_inout <- c("inside" = 23)
   }
   if(inside == FALSE){
     data_temp <- data_temp %>% 
       filter(DEVICE_LOCATIONTYPE != "inside")
-    print("Indoor sensor data has been filtered out")
+    print("Excluded indoor data")
     shapes_inout <- c("outside" = 21)
   }
   
   
-  # Legend label
+  # Labels for the plot
+  lab_title <- expression("PM"[2.5]*" values")
+  lab_subtitle <- paste("Data from PurpleAir. Data plotted:", deparse(substitute(value)))
   lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
   
+  # Base plot
   plot <- qmplot(data = data_temp, x = longitude, y = latitude,
          geom = "blank", maptype = maptype, zoom = zoom, darken = c(tint, tint_color)) +
     facet_wrap(vars({{grouping_var}})) +
     geom_point(
       aes(fill = mean, shape = DEVICE_LOCATIONTYPE),
       color = "white",
-      alpha = 0.85,
-      size = point_size,
-      #shape = 21
+      alpha = 0.8,
+      size = point_size
     ) +
     scale_fill_viridis(
       option = {{viridis}},
@@ -488,6 +489,8 @@ map_q <- function(pm_data, value, location_data = data_meta,
     ) + 
     guides(shape = guide_legend(override.aes = list(fill="black"))) +
     labs(
+      title = lab_title,
+      subtitle = lab_subtitle,
       fill = lab_pm,
       shape = "Monitor location:",
       caption = "Data not grouped."
@@ -517,9 +520,9 @@ map_q <- function(pm_data, value, location_data = data_meta,
     plot <- plot +
       facet_grid(
       formula(paste(
-        vars({{grouping_var}}),
+        vars({{grouping_var_2}}),
         "~",
-        vars({{grouping_var_2}})
+        vars({{grouping_var}})
       ))) +
       labs(
         caption = paste(
@@ -544,13 +547,13 @@ map_q <- function(pm_data, value, location_data = data_meta,
 ```
 
 ```{r map_tests, eval = FALSE}
+
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
 
-map_q(data_daily, value = epa_2021, grouping_var = date_tag, outside = FALSE)
+map_q(data_daily, value = epa_2020, grouping_var = date_tag, inside = FALSE)
 
 map_q(data_daily, value = lrapa, grouping_var = date_tag, exclude = "Fire")
-map_q(data_hourly, value = lrapa, grouping_var = date_tag, grouping_var_2 = hour_tag)
 
-map_q(data_hourly, value = lrapa, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
-      maptype = "terrain", tint = 0.3, tint_color = "orange", viridis = "magma")
+map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
+      maptype = "terrain", tint = 0.3, tint_color = "white", viridis = "magma")
 ```
