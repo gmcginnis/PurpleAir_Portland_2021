@@ -38,7 +38,7 @@ input_renames <- c(
   "PM10.0_CF1_ug/m3" = "pm10_cf1",
   "UptimeMinutes" = "uptime_min",
   "RSSI_dbm" = "rssi_dbm",
-  "Temperature_F" = "temp_f",
+  "Temperature_F" = "temperature_f",
   "Humidity_%" = "rh",
   "PM1.0_ATM_ug/m" = "pm1_atm",
   "PM2.5_ATM_ug/m3" = "pm2.5_atm",
@@ -52,7 +52,7 @@ input_rename_timestamp <- c("created_at" = "date_time")
 input_selects <- c(
   "pm2.5_cf1",
   "pm2.5_atm",
-  "temp_f",
+  "temperature_f",
   "rh"
   # "pm1_cf1",
   # "pm1_atm",
