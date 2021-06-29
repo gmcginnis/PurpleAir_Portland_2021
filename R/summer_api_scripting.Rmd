@@ -378,7 +378,7 @@ apply_hours <- function(dataset, starts = hourgroup_starts, tags = hourgroup_tag
     mutate(
       ends = lead(starts - 1),
       ends = replace_na(ends, starts[1]-1),
-      tags = paste0(tags, " (", starts, "-", ends, ")")
+      tags = paste0(tags, " (", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":00)")
     ) %>% 
     arrange(starts) %>% 
     mutate(hour_tag = fct_inorder(tags)) %>%
@@ -544,7 +544,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
 ```
 
 ```{r map_tests, eval = FALSE}
-map_q(data_daily, value = epa_2021, grouping_var = date_tag)
+map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
 
 map_q(data_daily, value = epa_2021, grouping_var = date_tag, outside = FALSE)
 
@@ -554,4 +554,3 @@ map_q(data_hourly, value = lrapa, grouping_var = date_tag, grouping_var_2 = hour
 map_q(data_hourly, value = lrapa, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
       maptype = "terrain", tint = 0.3, tint_color = "orange", viridis = "magma")
 ```
-
