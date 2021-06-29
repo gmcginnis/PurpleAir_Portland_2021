@@ -1,0 +1,50 @@
+---
+title: "summer_openair"
+author: "Gillian McGinnis"
+date: "6/28/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(openair)
+```
+
+
+```{r}
+# data_deq <- data_deq %>% 
+#   apply_dates() %>% 
+#   apply_hours()
+
+
+facet_by <- "hour_tag"
+
+data_deq %>% 
+  mutate(ws = wind_speed/2.237) %>% 
+  windRose(
+    #ws = "wind_speed",
+    wd = "wind_direction",
+    #key.footer = "mph"
+    type = facet_by
+  )
+
+# data_deq %>% 
+#   rename(
+#     ws = "wind_speed",
+#     wd = "wind_direction",
+#     pm2.5 = "pm2.5_deq"
+#   ) %>%
+#   polarAnnulus(poll = "pm2.5", period = "hour", main = "Hour")
+
+data_deq %>% 
+  rename(
+    ws = wind_speed,
+    wd = wind_direction,
+    pm2.5 = pm2.5_deq
+  ) %>% 
+  calendarPlot(pollutant = "pm2.5", annotate = "ws")
+```
+
