@@ -7,11 +7,14 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
 
+```{r libraries}
 library(tidyverse)
 library(readxl)
 library(lubridate)
 ```
+
 
 ```{r inputs}
 input_deq_path <- "data/deq/Portland SE Lafayette.xlsx"
@@ -19,14 +22,13 @@ input_deq_path <- "data/deq/Portland SE Lafayette.xlsx"
 # Input of renames. Those listed will be included in the final data frame.
 # Time stamp will be automatically renamed and kept.
 input_deq_renames <- c(
-  "PM2.5" = "pm2.5_deq",
+  "PM2.5" = "pm25_deq",
   "Temperature" = "temperature_c",
   "Relative Humidity" = "rh",
   "Wind Direction" = "wind_direction",
   "Wind Speed (mph)" = "wind_speed"
 )
 ```
-
 
 ```{r data_import}
 
