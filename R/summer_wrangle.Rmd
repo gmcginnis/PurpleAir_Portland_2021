@@ -17,15 +17,17 @@ library(lubridate)
 
 ```{r manual_inputs}
 # Path to folder containing CSV files of interest
-#input_path <- "data/raw"
-input_path <- "data/subset_unaveraged"
+input_path <- "data/raw"
+#input_path <- "data/subset_10min"
 
 # Choose to load primary and/or secondary data. At least one must be TRUE
 input_read_primary <- TRUE
 input_read_secondary <- TRUE
 
 #OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Use NULL otherwise
-input_path_filter <- NULL
+input_path_filter <- "se"
+
+input_timezone <- "America/Los_Angeles"
 ```
 
 ```{r settings}
@@ -38,27 +40,27 @@ input_skips <- c(
 
 # Use format of "Original name" = "new_name". Caveat: do NOT rename the timestamp variable here
 input_renames <- c(
-  "PM1.0_CF1_ug/m3" = "pm1_cf1",
-  "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
-  "PM10.0_CF1_ug/m3" = "pm10_cf1",
-  "UptimeMinutes" = "uptime_min",
-  "RSSI_dbm" = "rssi_dbm",
-  "Temperature_F" = "temperature_f",
-  "Humidity_%" = "rh",
+  "PM1.0_CF1_ug/m3" = "pm1",
+  "PM2.5_CF1_ug/m3" = "pm25",
+  "PM10.0_CF1_ug/m3" = "pm10",
+  #"UptimeMinutes" = "uptime",
+  #"RSSI_dbm" = "rssi",
+  "Temperature_F" = "temperature",
+  "Humidity_%" = "humidity",
   "PM1.0_ATM_ug/m" = "pm1_atm",
-  "PM2.5_ATM_ug/m3" = "pm2.5_atm",
+  "PM2.5_ATM_ug/m3" = "pm25_atm",
   "PM10_ATM_ug/m3" = "pm10_atm"
 )
 
 # Use format of "created_at" = "new_name". Rename timestamp variable
-input_rename_timestamp <- c("created_at" = "date_time")
+#input_rename_timestamp <- c("created_at" = "datetime")
 
 # List of renamed variables to keep (timestamp automatically kept)
 input_selects <- c(
-  "pm2.5_cf1",
-  "pm2.5_atm",
-  "temperature_f",
-  "rh"
+  "pm25",
+  "pm25_atm",
+  "temperature",
+  "humidity"
   # "pm1_cf1",
   # "pm1_atm",
   # "pm10_cf1",
@@ -91,6 +93,12 @@ data_loc <- data.frame(source = file_list) %>%
     loc_inout = factor(loc_inout, levels = c("outside", "inside")),
     lat = as.numeric(lat),
     lon = as.numeric(lon)
+  ) %>% 
+  # Renaming to keep consistency with API version
+  rename(
+    "longitude" = lon,
+    "latitude" = lat,
+    "DEVICE_LOCATIONTYPE" = loc_inout
   )
 ```
 
@@ -98,18 +106,22 @@ data_loc <- data.frame(source = file_list) %>%
 # Function purpose: read specific file by location, skipping columns as needed; extracting info from title
 # Input: One file path
 # Output: Data frame of input file with relevant info in columns
-clean_data <- function(input_file){
+clean_data <- function(input_file, renames = input_renames, selects = input_selects, skips = input_skips, time_zone = input_timezone){
   fread(input_file,
         sep = ",",
-        drop = input_skips,
+        #drop = input_skips,
         fill = TRUE) %>% 
-    plyr::rename(warn_missing = FALSE, input_renames) %>% 
-    select(created_at, intersect(all_of(input_selects), names(.))) %>%
+    select(!intersect(all_of(skips), names(.))) %>% 
+    plyr::rename(warn_missing = FALSE, renames) %>% 
+    select(created_at, intersect(all_of(selects), names(.))) %>%
     mutate(
-      created_at_utc = as.POSIXct(created_at, tz = "UTC"),
-      created_at = lubridate::with_tz(created_at_utc, "Etc/GMT+8")
+      datetime_utc = as.POSIXct(created_at, tzone = "UTC"),
+      datetime_tz = lubridate::with_tz(datetime_utc, tzone = time_zone),
+      # 2 minute intervals are used when averaging A&B sensor data if unaveraged data is used
+      datetime = floor_date(datetime_tz, unit = "2 minutes")
+      #datetime = lubridate::with_tz(datetime_utc, "Etc/GMT+8")
     ) %>% 
-    select(!created_at_utc) %>% 
+    select(!created_at) %>% 
     mutate(
       source = input_file,
       loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
@@ -119,8 +131,7 @@ clean_data <- function(input_file){
       loc_ab = replace_na(loc_ab, "A"),
       loc_ab = factor(loc_ab, levels = c("A", "B"))
     ) %>% 
-    select(!c(source, loc_path)) %>% 
-    plyr::rename(warn_missing = FALSE, input_rename_timestamp)
+    select(!c(source, loc_path))
 }
 ```
 
@@ -168,27 +179,71 @@ for(file_single in file_list){
 }
 
 #remove(input_read_primary, input_read_secondary, count_active, count_total)
-remove(clean_data, count_active, count_total, input_path, input_rename_timestamp, input_renames, input_selects, input_skips)
+remove(clean_data, count_active, count_total, input_path, input_renames, input_selects, input_skips)
 ```
 
 ```{r combine}
 if(input_read_primary == TRUE & input_read_secondary == TRUE){
-  data_pa <- data_primary %>% 
+  data_pa_raw <- data_primary %>% 
     full_join(data_secondary)
-  print("Primary and secondary data frames now joined.")
+  message_combine <- "Primary and secondary data frames now joined."
 }
 if(input_read_secondary == FALSE){
-  data_pa <- data_primary
+  data_pa_raw <- data_primary
+  message_combine <- "Only primary data selected."
 }
 if(input_read_primary == FALSE){
-  data_pa <- data_secondary
+  data_pa_raw <- data_secondary
+  message_combine <- "Only secondary data selected."
 }
 
-#remove(data_primary, data_secondary)
+print(message_combine)
+remove(message_combine, data_primary, data_secondary)
 ```
 
-```{r longer, eval=FALSE}
-data_pa %>% 
-  pivot_wider(names_from = loc_ab, values_from = where)
+```{r qc}
+cols_to_pivot <- data_pa_raw %>%
+  # Selecting one row, for ease of processing
+  slice(1) %>% 
+  # Selecting all numeric columns
+  select_if(is.numeric) %>% 
+  # B does not report temperature and humidity, therefore we will not pivot them
+  select(!intersect(c("temperature", "humidity"), names(.))) %>% 
+  names()
+
+data_pa <- data_pa_raw %>% 
+  group_by(label, datetime) %>% 
+  pivot_wider(names_from = loc_ab, values_from = all_of(cols_to_pivot)) %>% 
+  group_by(label, datetime) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+  apply_qc()
+  #apply_qc() %>% 
+  #drop_na(where(is.numeric))
+```
+
+```{r corrections}
+apply_correction_factors<- function(data, grouping_vars){
+  epa <- data %>% 
+    apply_epa_corrections(groupings = grouping_vars)
+  
+  lrapa <- data %>% 
+    apply_lrapa_correction(groupings = grouping_vars)
+  
+  epa %>% 
+    full_join(lrapa)
+}
+
+data_pa_hourly <- data_pa %>% 
+  apply_correction_factors(grouping_vars = vars(label, date, date_hour)) %>% 
+  apply_date_grouping() %>% 
+  apply_hour_grouping()
+
+data_pa_daily <- data_pa %>% 
+  apply_correction_factors(grouping_vars = vars(label, date)) %>% 
+  apply_date_grouping()
+
+data_pa_hourly %>% 
+  rename(site_id = label) %>% 
+  map_q(value = pm25_atm, location_data = (data_loc %>% rename(site_id = label)), grouping_var = hour_tag)
 ```
 
