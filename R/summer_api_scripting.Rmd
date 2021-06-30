@@ -53,7 +53,8 @@ input_west <- -122.854
 # Labels of monitors to include. If NULL/unspecified, all monitors will be included.
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Use the following format (capitalization matters):
-input_labels <- c("STAR", "Benson")
+#input_labels <- c("STAR", "Benson")
+input_labels <- c("SE", "se", "Se")
 #input_labels <- NULL
 
 ## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
@@ -190,10 +191,13 @@ remove(input_startdate, input_enddate, idCount, count, successCount, ids, id, re
 
 
 ```{r transpose_data}
-patList_transposed <- transpose(patList)
+# patList_transposed <- transpose(patList)
 
-raw_meta <- bind_rows(patList_transposed[[1]], .id = "site_id")
-raw_data <- bind_rows(patList_transposed[[2]], .id = "site_id")
+# raw_meta <- bind_rows(patList_transposed[[1]], .id = "site_id")
+# raw_data <- bind_rows(patList_transposed[[2]], .id = "site_id")
+patList_transposed <- pmap(patList, bind_rows, .id = "site_id")
+raw_meta <- patList_transposed[[1]]
+raw_data <- patList_transposed[[2]]
 
 # Cleaning environment
 remove(patList_transposed)
@@ -226,6 +230,31 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
 }
 ```
 
+```{r qc_function}
+apply_qc <- function(dataset){
+  dataset %>% 
+    # Basic quality control; only possible values are kept
+    # This will also drop missing values
+    filter_at(
+      # All columns that start with 'pm25'
+      vars(starts_with("pm25")),
+      # Filtering such that only values 0:2000 are kept
+      any_vars(between(., 0, 2000))
+    ) %>% 
+    filter(
+      # Filtering temperature for -40:185
+      between(temperature, -40, 185),
+      # Filtering humidity for 0:100
+      between(humidity, 0, 100)
+    ) %>% 
+    # Creating variables for date and hour
+    mutate(
+      date = date(datetime),
+      date_hour = floor_date(datetime, unit = "hour")
+    )
+}
+```
+
 ```{r qc_sets}
 # Basic subsetting and quality control
 
@@ -236,20 +265,8 @@ data_meta <- raw_meta %>%
 data_pm25 <- raw_data %>% 
   # Selecting only variables of interest, to save on storage
   select(site_id, datetime, temperature, humidity, pm25_A, pm25_B, pm25_atm_A, pm25_atm_B) %>% 
-  # Basic quality control; only possible values are kept
-  # This will also drop missing values
-  filter_at(
-    # All columns that start with 'pm25'
-    vars(starts_with("pm25")),
-    # Filtering such that only values 0:2000 are kept
-    any_vars(between(., 0, 2000))
-  ) %>% 
-  filter(
-    # Filtering temperature for -40:185
-    between(temperature, -40, 185),
-    # Filtering humidity for 0:100
-    between(humidity, 0, 100)
-  ) %>% 
+  # Applying quality control (see above function)
+  apply_qc() %>% 
   # Adjusting to be reported time zone (see above function)
   adjust_timezone() %>% 
   # Creating variables for date and hour
