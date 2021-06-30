@@ -29,89 +29,95 @@ library(ggmap)
 
 
 ```{r inputs}
-# Boundaries (in degrees) of monitors to include
-n <- 45.6
-e <- -122.58
-s <- 45.4
-w <- -122.854
+# REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
+input_startdate <- "2020-09-01"
+input_enddate <- "2020-09-30"
 
-# Optional: State of monitors to include. Default: NULL
-# If NULL, all monitors specified in the above boundaries will be included regardless of state
-state_code <- "OR"
-
-# Start and end dates
-startdate <- "2020-09-01"
-enddate <- "2020-09-30"
-
-# Grab data from outdoor and/or indoor sensors
+## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
+# Grab data for outdoor sensors?
 include_outside <- TRUE
+# Grab data for indoor sensors?
 include_inside <- TRUE
 
+## INPUTS FOR GETTING PAS & PAT
+## The following are optional but recommended. Set to NULL if not interested in filtering by the following.
+# State of monitors to include. If NULL/unspecified, all monitors specified in the above boundaries will be included regardless of state
+input_stateCode <- "OR"
+
+# Boundaries (in degrees) of monitors to include. It can also evaluate n/s or e/w pairs of bounds individually.
+input_north <- 45.6
+input_south <- 45.4
+input_east <- -122.58
+input_west <- -122.854
+
+# Labels of monitors to include. If NULL/unspecified, all monitors will be included.
+# The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
+# Use the following format (capitalization matters):
+input_labels <- c("STAR", "Benson")
+#input_labels <- NULL
+
+## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
 # Run date grouping?
-run_dategrouping <- TRUE
-# Date grouping categories
-if(run_dategrouping == TRUE){
-  dategroup_tags <- c("Before", "Fire", "After")
-  dategroup_starts <- c("2020-09-01", "2020-09-10", "2020-09-20")
-  dategroup_ends <- c("2020-09-09", "2020-09-19", "2020-09-30")
-} else {
-  print("Date grouping will not occur.")
-}
+run_date_grouping <- TRUE
+# Date grouping categories:
+input_date_tags <- c("Before", "Fire", "After")
+# Start dates (in a list, "YYYY-MM-DD")
+input_date_starts <- c("2020-09-01", "2020-09-10", "2020-09-20")
+# End dates (in a list, "YYYY-MM-DD")
+input_date_ends <- c("2020-09-09", "2020-09-19", "2020-09-30")
 
+## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
 # Run hour grouping?
-run_hourgrouping <- TRUE
-# Hour grouping categories
-if(run_hourgrouping == TRUE){
-  hourgroup_tags <- c("Morning", "Afternoon", "Evening", "Night")
-  hourgroup_starts <- c(5, 12, 17, 21)
-} else {
-  print("Hour grouping will not occur.")
-}
-```
-
-```{r label_tests, eval = FALSE}
-#labels_interest <- c("Benson", "PSU STAR LAB SEL")
-labels_interest <- c("Benson", "PSU", "STAR")
-labels_of_interst <- paste0("(",paste(labels_interest, collapse = ")|("), ")")
-remove(labels_interest)
-
-pas_load(archival = TRUE, datestamp = str_replace_all(as.character(enddate), "-", "")) %>% 
-  pas_filter(str_detect(label, labels_of_interst))
-
-
+run_hour_grouping <- TRUE
+# Hour grouping categories:
+input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
+# Start hours (in a list, using full hours in 24 hour format)
+input_hour_starts <- c(5, 12, 17, 21)
+# End hours will be automatically generated
 ```
 
 
 ```{r getting_pas}
-get_area_pas <- function(state_code = NULL, w, e, s, n, datestamp = enddate){
+get_area_pas <- function(state_code = input_stateCode,
+                         west = input_west, east = input_east, south = input_south, north = input_north,
+                         labels = input_labels,
+                         datestamp = input_enddate){
+  
   setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
+  
+  labels_string <- paste0("(",paste(labels, collapse = ")|("), ")")
+  
   pas <- pas_load(
+    # archival allows for retrieval of sensor info even if they are no longer reporting
     archival = TRUE,
+    # datestamp is important when loading historical data, as not all monitors might be actively reporting anymore
     datestamp = str_replace_all(as.character(datestamp), "-", "")
   )
+  
   if(is.null(state_code) == TRUE){
     pas_state <- pas
+    print("Sensors not filtered for a specified state code.")
   } else {
     pas_state <- pas_filter(pas, stateCode == state_code)
+    print(paste("Sensors now filtered for the state of", state_code))
   }
-  pas_area <- pas_filterArea(pas = pas_state, w = w, e = e, s = s, n = n)
+  
+  pas_area <- pas_filterArea(pas = pas_state, w = west, e = east, s = south, n = north) %>% 
+    pas_filter(str_detect(label, labels_string))
+  
   return(pas_area)
 }
 
-pas_area <- get_area_pas(state_code = state_code, w = w, e = e, s = s, n = n)
+pas_area <- get_area_pas()
 
 # Cleaning environment
-remove(get_area_pas, state_code, n, e, s, w)
+remove(get_area_pas, input_stateCode, input_north, input_east, input_south, input_west, input_labels)
 ```
 
-```{r getting_pat}
-# Setup for iteration
+```{r getting_id}
 ids_outside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = TRUE)
 ids_inside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = FALSE)
 
-if(include_outside == FALSE & include_inside == FALSE){
-  inout_report <- ("INPUT ERROR: Please set `include_outside` and/or `include_inside` to TRUE.")
-}
 if(include_outside == TRUE & include_inside == TRUE){
   ids <- c(ids_outside, ids_inside)
   inout_report <- ("Both indoor and outdoor sensor data will be loaded.")
@@ -124,11 +130,24 @@ if(include_outside == FALSE & include_inside == TRUE){
   ids <- ids_inside
   inout_report <- ("Only indoor sensor data will be loaded.")
 }
-print(inout_report)
-remove(ids_outside, ids_inside, inout_report)
+if(include_outside == FALSE & include_inside == FALSE){
+  inout_report <- ("INPUT ERROR: Please set `include_outside` and/or `include_inside` to TRUE.")
+  stop(inout_report)
+}
 
+print(inout_report)
+
+if(length(ids) > 100){
+  print("CAUTION: More than 100 monitors selected. Data processing will take time. Consider applying more area filters first.")
+}
+print(paste("Number of selected monitors:", length(ids)))
+
+remove(ids_outside, ids_inside, inout_report)
+```
+
+```{r iteration}
+# Setup for iteration
 patList <- list()
-#idCount <- length(pas_area)
 idCount <- length(ids)
 count <- 0 
 successCount <- 0
@@ -144,10 +163,10 @@ for (id in ids[1:idCount]) {
     
     patList[[id]] <- pat_createNew(
       id = id,
-      label = NULL,        # Not needed if we have the ID
+      label = NULL,   # Label not needed since we have the IDs
       pas = pas_area,
-      startdate = startdate,
-      enddate = enddate,
+      startdate = input_startdate,
+      enddate = input_enddate,
       baseUrl = "https://api.thingspeak.com/channels/",
       verbose = FALSE
     )
@@ -163,10 +182,12 @@ for (id in ids[1:idCount]) {
 
 # Review
 print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
-
-# Cleaning environment
-remove(startdate, enddate, idCount, count, successCount, ids, id, result)
 ```
+
+```{r cleaning_environment}
+remove(input_startdate, input_enddate, idCount, count, successCount, ids, id, result)
+```
+
 
 ```{r transpose_data}
 patList_transposed <- transpose(patList)
@@ -179,9 +200,11 @@ remove(patList_transposed)
 ```
 
 ```{r timezone_function}
-# Time zones are recorded when downloading data. Time stamps are reported in UTC. The following will convert the time stamps to said time zone.
+# Time zones are reported as a variable when downloading the data. Time stamps are reported in UTC. The following will convert the time stamps to said reported time zone.
 # If more than one time zone is reported in the data, the conversion will use the time zone most frequently used in the data set. This is because no more than one time zone can be applied to a date time variable.
 adjust_timezone <- function(dataset, location_data = raw_meta){
+  
+  # Translation: If more than 1 unique timezone is reported in the data frame, then:
   if(length(unique(location_data$timezone)) > 1){
   print("Multiple time zones reported. Timestamp will be based on the most frequent time zone reported.")
   timezone <- (location_data %>% 
@@ -192,12 +215,13 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
   } else {
     timezone <- unique(location_data$timezone)
   }
-  print(paste("Time zone applied:", timezone))
   
   dataset_new <- dataset %>%
+    # Original time stamps (in UTC) will be preserved
     rename(datetime_utc = datetime) %>% 
     mutate(datetime = with_tz(datetime_utc, tzone = timezone))
   
+  print(paste("Time zone applied:", timezone))
   return(dataset_new)
 }
 ```
@@ -233,6 +257,7 @@ data_pm25 <- raw_data %>%
     date = date(datetime),
     date_hour = floor_date(datetime, unit = "hour")
   ) %>% 
+  # Reordering variables for ease of reading
   select(site_id, datetime_utc, datetime, date, date_hour, everything())
 
 # Cleaning environment
@@ -240,7 +265,7 @@ remove(adjust_timezone)
 ```
 
 ```{r corr_epa_factor}
-apply_epa <- function(dataset, groupings){
+apply_epa_corrections <- function(dataset, groupings){
   dataset %>% 
     group_by_at({{groupings}}) %>% 
     mutate(
@@ -275,7 +300,7 @@ apply_epa <- function(dataset, groupings){
 }
 
 data_hourly_epa <- data_pm25 %>% 
-  apply_epa(groupings = vars(site_id, date, date_hour))
+  apply_epa_corrections(groupings = vars(site_id, date, date_hour))
 
 # Filter all dates in which there are fewer than 18/24 hr worth of measurements
 data_epa_drop <- data_pm25 %>% 
@@ -287,14 +312,14 @@ data_epa_drop <- data_pm25 %>%
 
 data_daily_epa <- data_pm25 %>% 
   anti_join(data_epa_drop) %>% 
-  apply_epa(groupings = vars(site_id, date))
+  apply_epa_corrections(groupings = vars(site_id, date))
 
 # Cleaning environment
-remove(apply_epa, data_epa_drop)
+remove(apply_epa_corrections, data_epa_drop)
 ```
 
 ```{r lrapa}
-apply_lrapa <- function(dataset, groupings){
+apply_lrapa_correction <- function(dataset, groupings){
   dataset %>% 
     group_by_at({{groupings}}) %>% 
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
@@ -308,13 +333,13 @@ apply_lrapa <- function(dataset, groupings){
 }
 
 data_hourly_lrapa <- data_pm25 %>% 
-  apply_lrapa(groupings = vars(site_id, date, date_hour))
+  apply_lrapa_correction(groupings = vars(site_id, date, date_hour))
 
 data_daily_lrapa <- data_pm25 %>% 
-  apply_lrapa(groupings = vars(site_id, date))
+  apply_lrapa_correction(groupings = vars(site_id, date))
 
 # Cleaning environment
-remove(apply_lrapa)
+remove(apply_lrapa_correction)
 ```
 
 ```{r group_sets}
@@ -328,9 +353,9 @@ data_hourly <- data_hourly_epa %>%
 remove(data_daily_lrapa, data_daily_epa, data_hourly_lrapa, data_hourly_epa)
 ```
 
-```{r apply_dates_set}
-apply_dates <- function(dataset,
-                        starts = dategroup_starts, ends = dategroup_ends, tags = dategroup_tags,
+```{r apply_date_grouping_set}
+apply_date_grouping <- function(dataset,
+                        starts = input_date_starts, ends = input_date_ends, tags = input_date_tags,
                         date_stamp = "17 Jan 1999"){
   
   starts <- as.Date(starts)
@@ -343,41 +368,33 @@ apply_dates <- function(dataset,
     mutate(
       start_stamp = date_format(starts),
       end_stamp = date_format(ends),
-      date_tag = fct_inorder(paste0(tags, " (", start_stamp, " to ", end_stamp, ")"))
+      date_tag = fct_inorder(paste0(tags, " (", start_stamp, " through ", end_stamp, ")"))
     ) %>% 
     pivot_longer(cols = c(starts, ends), values_to = "date") %>% 
     group_by(date_tag) %>% 
     complete(date = full_seq(date, 1)) %>% 
     select(!c(name, tags, start_stamp, end_stamp))
   
-  # data_temp <- data.frame(starts, ends, tags) %>% 
-  #   arrange(starts) %>% 
-  #   mutate(date_tag = fct_inorder(tags)) %>% 
-  #   pivot_longer(cols = c(starts, ends), values_to = "date") %>% 
-  #   group_by(date_tag) %>% 
-  #   complete(date = full_seq(date, 1)) %>% 
-  #   select(!c(name, tags))
-  
   dataset %>% 
     left_join(data_temp) %>% 
     drop_na(date_tag)
 }
 
-if(run_dategrouping == TRUE){
-  data_hourly <- apply_dates(data_hourly)
-  data_daily <- apply_dates(data_daily)
+if(run_date_grouping == TRUE){
+  data_hourly <- apply_date_grouping(data_hourly)
+  data_daily <- apply_date_grouping(data_daily)
   print("Data now grouped by provided date groupings.")
-  remove(dategroup_starts, dategroup_ends, dategroup_tags)
+  remove(input_date_starts, input_date_ends, input_date_tags)
 } else {
   print("Date groups not applied.")
 }
 
 # Cleaning environment
-remove(apply_dates, run_dategrouping)
+remove(run_date_grouping)
 ```
 
 ```{r apply_hour_tags}
-apply_hours <- function(dataset, starts = hourgroup_starts, tags = hourgroup_tags){
+apply_hour_grouping <- function(dataset, starts = input_hour_starts, tags = input_hour_tags){
   tags <- factor(tags)
   
   hours_in_day <- data.frame(starts = 0:23)
@@ -386,7 +403,7 @@ apply_hours <- function(dataset, starts = hourgroup_starts, tags = hourgroup_tag
     mutate(
       ends = lead(starts - 1),
       ends = replace_na(ends, starts[1]-1),
-      tags = paste0(tags, " (", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":00)")
+      tags = paste0(tags, " (", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
     ) %>% 
     arrange(starts) %>% 
     mutate(hour_tag = fct_inorder(tags)) %>%
@@ -401,16 +418,16 @@ apply_hours <- function(dataset, starts = hourgroup_starts, tags = hourgroup_tag
     left_join(data_temp)
 }
 
-if(run_hourgrouping == TRUE){
-  data_hourly <- apply_hours(data_hourly)
+if(run_hour_grouping == TRUE){
+  data_hourly <- apply_hour_grouping(data_hourly)
   print("Data now grouped by provided hour groupings.")
-  remove(hourgroup_starts, hourgroup_tags)
+  remove(input_hour_starts, input_hour_tags)
 } else {
   print("Hour groups not applied.")
 }
 
 # Cleaning environment
-remove(apply_hours, run_hourgrouping)
+remove(run_hour_grouping)
 ```
 
 
@@ -431,7 +448,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
   # Warning message and halting execution if required input is missing.
   if(missing(value) == TRUE) stop ("ERROR in argument 'value': Missing input, with no default. Execution haulted. Please input a valid PM2.5 variable (e.g. epa_2021).")
   
-  labels_of_interest <- paste0("(", paste(label, collapse = ")|("), ")")
+  input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
   
   # Wrangling based on provided inputs
   data_temp <- pm_data %>% 
@@ -440,7 +457,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
     summarize(mean = mean({{value}}, na.rm = TRUE)) %>% 
     drop_na(mean) %>% 
     left_join(location_data) %>% 
-    filter(str_detect(label, labels_of_interest))
+    filter(str_detect(label, input_labels))
   
   print("Data now grouped and averaged. Location data added.")
   
@@ -519,7 +536,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
   # Facet wrap if 1 grouping variable provided
   if(deparse(substitute(grouping_var)) != "NULL" &
      deparse(substitute(grouping_var_2)) == "NULL"
-    ){
+  ){
     plot <- plot +
       facet_wrap(vars({{grouping_var}})) +
       labs(
@@ -533,7 +550,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
   # Facet grid if 2 grouping variables provided
   if(deparse(substitute(grouping_var)) != "NULL" &
      deparse(substitute(grouping_var_2)) != "NULL"
-     ){
+  ){
     plot <- plot +
       facet_grid(
       formula(paste(

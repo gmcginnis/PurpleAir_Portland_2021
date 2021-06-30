@@ -7,31 +7,36 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
 
+```{r libraries}
 library(tidyverse)
 library(data.table)
 library(lubridate)
 ```
 
 ```{r manual_inputs}
-# REQUIRED; path to CSV files of interest
-input_path <- "data/raw"
+# Path to folder containing CSV files of interest
+#input_path <- "data/raw"
+input_path <- "data/subset_unaveraged"
+
+# Choose to load primary and/or secondary data. At least one must be TRUE
+input_read_primary <- TRUE
+input_read_secondary <- TRUE
 
 #OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Use NULL otherwise
-#input_path_filter <- NULL
+input_path_filter <- NULL
+```
 
-# REQUIRED: choose to load primary and/or secondary data
-input_read_primary <- TRUE
-input_read_secondary <- FALSE
-
-# REQUIRED; list of (ORIGINAL name) variables to skip when reading file
+```{r settings}
+# list of (ORIGINAL name) variables to skip when reading file
 input_skips <- c(
   "entry_id",
   "UptimeMinutes",
   "V11" #Auto added by fread b/c of how the CSVs are stored
 )
 
-# OPTIONAL. Use format of "Original name" = "new_name". Caveat: do NOT rename the timestamp variable here
+# Use format of "Original name" = "new_name". Caveat: do NOT rename the timestamp variable here
 input_renames <- c(
   "PM1.0_CF1_ug/m3" = "pm1_cf1",
   "PM2.5_CF1_ug/m3" = "pm2.5_cf1",
@@ -45,10 +50,10 @@ input_renames <- c(
   "PM10_ATM_ug/m3" = "pm10_atm"
 )
 
-# OPTIONAL. Use format of "created_at" = "new_name". Rename timestamp variable
+# Use format of "created_at" = "new_name". Rename timestamp variable
 input_rename_timestamp <- c("created_at" = "date_time")
 
-# REQUIRED. List of renamed variables to keep (timestamp automatically kept)
+# List of renamed variables to keep (timestamp automatically kept)
 input_selects <- c(
   "pm2.5_cf1",
   "pm2.5_atm",
@@ -60,30 +65,26 @@ input_selects <- c(
   # "pm10_atm"
 )
 
-#
-## Not an input, but is to be run prior to iterations:
+
 file_list <- list.files(path = input_path,
                         pattern = input_path_filter,
                         full.names = TRUE)
-##
-#
 ```
 
-
-```{r loc_index}
+```{r location_index}
 # Input: list of files in path
 # Output: data frame with sensor tag, latitude, longitude, inside/outside
 data_loc <- data.frame(source = file_list) %>% 
   mutate(
     loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
-    loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
-    loc_tag = str_replace(loc_tag, " B$", ""),
+    label = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
+    label = str_replace(label, " B$", ""),
     loc_inout = str_extract(source, "(?!\\()(outside|inside)(?=\\))"),
     lat = str_extract(source, "(?!\\()-*\\d+\\.\\d+(?= )"),
     lon = str_extract(source, "-*\\d+\\.\\d+(?=\\))")
   ) %>% 
   select(!c(source, loc_path)) %>% 
-  group_by(loc_tag) %>%
+  group_by(label) %>%
   fill(loc_inout) %>%
   unique() %>% 
   mutate(
@@ -112,8 +113,8 @@ clean_data <- function(input_file){
     mutate(
       source = input_file,
       loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
-      loc_tag = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
-      loc_tag = str_replace(loc_tag, " B$", ""),
+      label = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
+      label = str_replace(label, " B$", ""),
       loc_ab = str_extract(source, "B(?= \\((outside|inside|undefined))"),
       loc_ab = replace_na(loc_ab, "A"),
       loc_ab = factor(loc_ab, levels = c("A", "B"))
@@ -123,20 +124,22 @@ clean_data <- function(input_file){
 }
 ```
 
-```{r for_loop_function}
-# Setup: cleaning environment
-remove(
-  file_single,
-  data_primary, temp_primary,
-  data_secondary, temp_secondary
-)
-
-data_primary <- data.frame(NA)
-data_secondary <- data.frame(NA)
+```{r iteration}
+data_primary <- data.frame()
+data_secondary <- data.frame()
+count_active <- 0
+count_total <- length(file_list)
 
 # Loop purpose: repeat file reading process for all files in a specified path
 # Output: data frames (one primary, one secondary)
 for(file_single in file_list){
+  
+  if(input_read_primary == FALSE & input_read_secondary == FALSE){
+    stop("INPUT ERROR: Execution halted. Please set input read options to TRUE for primary and/or secondary.")
+  }
+  
+  count_active <- count_active + 1
+  print(sprintf("Working on %d/%d (%s) ...", count_active, count_total, file_single))
   
   if(
     input_read_primary == TRUE &
@@ -144,9 +147,7 @@ for(file_single in file_list){
     ){
     temp_primary <- clean_data(file_single)
     
-    data_primary <- plyr::rbind.fill(data_primary, temp_primary) %>% 
-      select(!intersect("NA.", names(.))) %>% 
-      drop_na(loc_tag)
+    data_primary <- plyr::rbind.fill(data_primary, temp_primary)
     
     remove(temp_primary)
   }
@@ -157,13 +158,37 @@ for(file_single in file_list){
     ){
     temp_secondary <- clean_data(file_single)
     
-    data_secondary <- plyr::rbind.fill(data_secondary, temp_secondary) %>% 
-      select(!intersect("NA.", names(.))) %>% 
-      drop_na(loc_tag)
+    data_secondary <- plyr::rbind.fill(data_secondary, temp_secondary)
     
     remove(temp_secondary)
   }
   
   remove(file_single)
+  
 }
+
+#remove(input_read_primary, input_read_secondary, count_active, count_total)
+remove(clean_data, count_active, count_total, input_path, input_rename_timestamp, input_renames, input_selects, input_skips)
 ```
+
+```{r combine}
+if(input_read_primary == TRUE & input_read_secondary == TRUE){
+  data_pa <- data_primary %>% 
+    full_join(data_secondary)
+  print("Primary and secondary data frames now joined.")
+}
+if(input_read_secondary == FALSE){
+  data_pa <- data_primary
+}
+if(input_read_primary == FALSE){
+  data_pa <- data_secondary
+}
+
+#remove(data_primary, data_secondary)
+```
+
+```{r longer, eval=FALSE}
+data_pa %>% 
+  pivot_wider(names_from = loc_ab, values_from = where)
+```
+
