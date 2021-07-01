@@ -24,8 +24,8 @@ input_read_primary <- TRUE
 input_read_secondary <- FALSE
 
 #OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Use NULL otherwise
-#input_path_filter <- "PSU STAR LAB SEL"
-input_path_filter <- "se"
+input_path_filter <- "PSU STAR LAB SEL"
+#input_path_filter <- "se"
 
 input_timezone <- "America/Los_Angeles"
 ```
@@ -223,25 +223,14 @@ data_pa <- data_pa_raw %>%
 ```
 
 ```{r corrections}
-apply_correction_factors<- function(data, grouping_vars){
-  epa <- data %>% 
-    apply_epa_corrections(groupings = grouping_vars)
-  
-  lrapa <- data %>% 
-    apply_lrapa_correction(groupings = grouping_vars)
-  
-  epa %>% 
-    full_join(lrapa)
-}
-
 data_pa_hourly <- data_pa %>% 
-  apply_correction_factors(grouping_vars = vars(site_id, date, date_hour)) %>% 
-  apply_date_grouping() %>% 
-  apply_hour_grouping()
+  apply_corrections(daily = TRUE, hourly = TRUE) %>% 
+  apply_hour_tags() %>% 
+  apply_date_tags()
 
 data_pa_daily <- data_pa %>% 
-  apply_correction_factors(grouping_vars = vars(site_id, date)) %>% 
-  apply_date_grouping()
+  apply_corrections(daily = TRUE, hourly = FALSE) %>% 
+  apply_date_tags()
 ```
 
 ```{r mapping_test, eval=FALSE}
