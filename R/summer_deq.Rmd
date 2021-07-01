@@ -85,3 +85,29 @@ data_deq <- data_deq_raw %>%
 remove(data_deq_raw, input_deq_path, input_deq_renames)
 ```
 
+```{r,eval=FALSE}
+# id_star_sel <- data_meta %>% 
+#   filter(str_detect(label, "PSU STAR LAB SEL")) %>% 
+#   pull(site_id)
+# 
+# data_pa_star <- data_hourly %>% 
+#   filter(site_id == id_star_sel)
+# 
+# data_star_sel <- data_pa_star %>% 
+data_star_sel <- data_pa_hourly %>% 
+  full_join(data_deq) %>% 
+  select(date, date_hour, pm25_atm, pm25_cf1, epa_2020, epa_2021, lrapa, pm25_deq, date_tag, hour_tag) %>% 
+  drop_na(date_tag)
+
+data_star_sel %>% 
+  mutate(across(where(is.numeric), ~.-pm25_deq)) %>% 
+  pivot_longer(cols = where(is.numeric)) %>% 
+  filter(name %in% c("epa_2020", "epa_2021", "lrapa", "pm25_deq")) %>% 
+  ggplot(aes(date_hour, value, color = name)) +
+  #facet_wrap(~date_tag, scales = "free") +
+  #facet_grid(hour_tag~date_tag, scales = "free") +
+  #facet_wrap(hour_tag~date_tag, scales = "free") +
+  geom_line() +
+  theme(legend.position = "bottom")
+```
+
