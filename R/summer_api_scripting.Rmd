@@ -231,8 +231,8 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
 ```
 
 ```{r qc_function}
-apply_qc <- function(dataset){
-  dataset %>% 
+apply_qc <- function(dataset, avg_ab = TRUE){
+  data_qc <- dataset %>% 
     # Basic quality control; only possible values are kept
     # This will also drop missing values
     filter_at(
@@ -252,6 +252,19 @@ apply_qc <- function(dataset){
       date = date(datetime),
       date_hour = floor_date(datetime, unit = "hour")
     )
+  
+  if(avg_ab == TRUE){
+    data_qc <- data_qc %>% 
+      rowwise() %>% 
+      mutate(
+        pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
+        pm25_atm = mean(c(pm25_atm_A, pm25_atm_B), na.rm = TRUE)
+      ) %>% 
+      ungroup()
+    print("Columns for averages of A & B data added")
+  }
+  
+  return(data_qc)
 }
 ```
 
@@ -269,11 +282,6 @@ data_pm25 <- raw_data %>%
   apply_qc() %>% 
   # Adjusting to be reported time zone (see above function)
   adjust_timezone() %>% 
-  # Creating variables for date and hour
-  mutate(
-    date = date(datetime),
-    date_hour = floor_date(datetime, unit = "hour")
-  ) %>% 
   # Reordering variables for ease of reading
   select(site_id, datetime_utc, datetime, date, date_hour, everything())
 
@@ -281,8 +289,138 @@ data_pm25 <- raw_data %>%
 remove(adjust_timezone)
 ```
 
-```{r corr_epa_factor}
-apply_epa_corrections <- function(dataset, groupings){
+```{r applying_epa_corr}
+apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75){
+  
+  if(by_day == FALSE & by_hour == FALSE){
+    stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.")
+  }
+  if(by_day == TRUE & by_hour == FALSE){
+    print("Grouping by date (24 hour averages, by day) [DEFAULT]")
+    groupings_drop <- vars(site_id, date, date_hour)
+    groupings <- vars(site_id, date)
+    time_unit <- 24
+  }
+  if(by_day == TRUE & by_hour == TRUE){
+    print("Grouping by date and hour (1 hour averages, by day)")
+    groupings_drop <- vars(site_id, date, date_hour, minute)
+    groupings <- vars(site_id, date, date_hour)
+    time_unit <- 60/2
+    dataset <- dataset %>% 
+      mutate(minute = minute(datetime))
+  }
+  if(by_day == FALSE & by_hour == TRUE){
+    print("Grouping by hour (1 hour averages)")
+    groupings_drop <- vars(site_id, hour, minute)
+    groupings <- vars(site_id, hour)
+    time_unit <- 60/2
+    dataset <- dataset %>% 
+      mutate(
+        hour = hour(datetime),
+        minute = minute(datetime)
+      )
+  }
+  
+  count_to_drop <- ceiling(time_unit*(epa_percent/100))
+  
+  # Creating a data frame of groups to be removed due to low data quantity
+  drop_set <- dataset %>% 
+    group_by_at(groupings_drop) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    group_by_at(groupings) %>% 
+    count() %>% 
+    filter(n < count_to_drop)
+  
+  print("Values to be dropped via an anti-join:")
+  print(drop_set)
+  
+  dataset %>% 
+    anti_join(drop_set) %>% 
+    group_by_at(groupings) %>% 
+    mutate(
+      # Difference between A&B sensors
+      diff = pm25_A-pm25_B,
+      # Percentage difference between A&B sensors
+      per_diff = 100*(abs(pm25_A-pm25_B))/((pm25_A+pm25_B)/2),
+      drop = case_when(
+        # We will drop the following based on EPA recommendations
+        abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
+        # Fills all other values (the ones we'll keep) with false
+        TRUE ~ FALSE
+        )
+      ) %>% 
+    # Filtering out values which we have determined to drop
+    filter(drop != TRUE) %>% 
+    select(!c(drop, diff, per_diff)) %>% 
+    group_by_at(groupings) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    rowwise() %>% 
+    mutate(
+      # US-wide correction factor published in 2020
+      epa_2020 = 0.524*pm25_cf1 - 0.0852*humidity + 5.72,
+      # US-wide correction factor published in late 2020
+      epa_2021 = case_when(
+        pm25_cf1 <= 343 ~ 0.52*pm25_cf1 - 0.086*humidity + 5.75,
+        pm25_cf1 > 343 ~ 0.46*pm25_cf1 + (3.93*10^(-4))*(pm25_cf1^2) +2.97
+        )
+      ) %>% 
+    # Dropping negative values
+    filter_at(vars(epa_2020, epa_2021), any_vars(. >= 0))
+}
+```
+
+```{r applying_lrapa_corr}
+apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE){
+  
+  if(by_day == FALSE & by_hour == FALSE){
+    stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.")
+  }
+  if(by_day == TRUE & by_hour == FALSE){
+    print("Grouping by date (24 hour averages, by day) [DEFAULT]")
+    groupings <- vars(site_id, date)
+  }
+  if(by_day == TRUE & by_hour == TRUE){
+    print("Grouping by date and hour (1 hour averages, by day)")
+    groupings <- vars(site_id, date, date_hour)
+  }
+  if(by_day == FALSE & by_hour == TRUE){
+    print("Grouping by hour (1 hour averages)")
+    groupings <- vars(site_id, hour)
+    dataset <- dataset %>% 
+      mutate(hour = hour(datetime))
+  }
+  
+  dataset %>% 
+    group_by_at(groupings) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    rowwise() %>% 
+    mutate(
+      lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
+      ) %>% 
+    # Dropping negative values
+    filter(lrapa >= 0)
+}
+```
+
+```{r apply_corr_factors}
+apply_corrections <- function(data, daily, hourly, epa = 75){
+  epa <- data %>% 
+    apply_epa(by_day = daily, by_hour = hourly, epa_percent = epa)
+  
+  lrapa <- data %>% 
+    apply_lrapa(by_day = daily, by_hour = hourly)
+  
+  epa %>% 
+    full_join(lrapa)
+}
+
+data_daily <- apply_corrections(data_pm25, daily = TRUE, hourly = FALSE)
+data_hourly <- apply_corrections(data_pm25, daily = TRUE, hourly = TRUE)
+```
+
+
+```{r corr_epa_factor_old, eval = FALSE}
+apply_epa_corrections_old <- function(dataset, groupings){
   dataset %>% 
     group_by_at({{groupings}}) %>% 
     mutate(
@@ -335,8 +473,8 @@ data_daily_epa <- data_pm25 %>%
 remove(apply_epa_corrections, data_epa_drop)
 ```
 
-```{r lrapa}
-apply_lrapa_correction <- function(dataset, groupings){
+```{r lrapa_old, eval = FALSE}
+apply_lrapa_correction_old <- function(dataset, groupings){
   dataset %>% 
     group_by_at({{groupings}}) %>% 
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
@@ -345,8 +483,7 @@ apply_lrapa_correction <- function(dataset, groupings){
       pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
       pm25_atm = mean(c(pm25_atm_A, pm25_atm_B), na.rm = TRUE),
       lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
-      ) %>% 
-    drop_na(lrapa)
+      )
 }
 
 data_hourly_lrapa <- data_pm25 %>% 
@@ -359,7 +496,7 @@ data_daily_lrapa <- data_pm25 %>%
 remove(apply_lrapa_correction)
 ```
 
-```{r group_sets}
+```{r group_sets_old, eval = FALSE}
 data_daily <- data_daily_epa %>% 
   full_join(data_daily_lrapa)
 
@@ -430,21 +567,69 @@ apply_hour_grouping <- function(dataset, starts = input_hour_starts, tags = inpu
     fill(hour_tag) %>%
     select(!c(tags, ends))
   
+  if("hour" %in% colnames(dataset) == FALSE){
+    dataset <- dataset %>% 
+      mutate(hour = hour(date_hour))
+  }
+  
   dataset %>% 
-    mutate(hour = hour(date_hour)) %>% 
     left_join(data_temp)
 }
+```
 
-if(run_hour_grouping == TRUE){
-  data_hourly <- apply_hour_grouping(data_hourly)
-  print("Data now grouped by provided hour groupings.")
-  remove(input_hour_starts, input_hour_tags)
-} else {
-  print("Hour groups not applied.")
+```{r applying,eval=FALSE}
+applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run_date_grouping, tag_hours = run_hour_grouping){
+  
+  new_df <- dataframe %>%
+    apply_corrections(daily = group_day, hourly = group_hour)
+  print("Correction factors applied.")
+  
+  if(tag_dates == TRUE & group_day == TRUE){
+    tagged_days <- dataframe %>% 
+      apply_date_grouping() %>% 
+      select(date, date_tag)
+    
+    new_df <- new_df %>% left_join(tagged_days)
+    print("Data now tagged by provided date groupings.")
+  } else {
+    print("Date groups not applied.")
+  }
+  
+  if(group_hour == TRUE & tag_hours == TRUE){
+    tagged_hours <- dataframe %>% 
+      apply_hour_grouping() %>% 
+      select(hour, hour_tag)
+    print("Data now tagged by provided hour groupings.")
+    
+    if("hour" %in% colnames(new_df) == FALSE){
+      new_df <- new_df %>% 
+        mutate(hour = hour(date_hour))
+    }
+    
+    new_df <- new_df %>% left_join(tagged_hours)
+  } else {
+    print("Hour groups not applied.")
+  }
+  
+  return(new_df)
 }
 
-# Cleaning environment
-remove(run_hour_grouping)
+data_daily <- applying_functions(data_pm25)
+
+applying_functions(data_subset, group_day = FALSE, group_hour = TRUE)
+applying_functions(data_subset, group_day = TRUE, group_hour = TRUE)
+
+applying_functions(data_subset, group_day = TRUE, group_hour = TRUE, tag_hours = TRUE, tag_dates = TRUE)
+
+data_hourly <- applying_functions(data_pm25, group_hour = TRUE)
+```
+
+```{r,eval=FALSE}
+data_subset <- data_pm25 %>% slice(1:10000)
+
+data_subset %>% 
+  apply_corrections(daily=FALSE,hourly=TRUE) %>% 
+  apply_hour_grouping()
 ```
 
 

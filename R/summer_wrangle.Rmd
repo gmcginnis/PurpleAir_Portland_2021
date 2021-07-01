@@ -18,13 +18,13 @@ library(lubridate)
 ```{r manual_inputs}
 # Path to folder containing CSV files of interest
 input_path <- "data/raw"
-#input_path <- "data/subset_10min"
 
 # Choose to load primary and/or secondary data. At least one must be TRUE
 input_read_primary <- TRUE
-input_read_secondary <- TRUE
+input_read_secondary <- FALSE
 
 #OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Use NULL otherwise
+#input_path_filter <- "PSU STAR LAB SEL"
 input_path_filter <- "se"
 
 input_timezone <- "America/Los_Angeles"
@@ -43,8 +43,8 @@ input_renames <- c(
   "PM1.0_CF1_ug/m3" = "pm1",
   "PM2.5_CF1_ug/m3" = "pm25",
   "PM10.0_CF1_ug/m3" = "pm10",
-  #"UptimeMinutes" = "uptime",
-  #"RSSI_dbm" = "rssi",
+  "UptimeMinutes" = "uptime",
+  "RSSI_dbm" = "rssi",
   "Temperature_F" = "temperature",
   "Humidity_%" = "humidity",
   "PM1.0_ATM_ug/m" = "pm1_atm",
@@ -99,7 +99,8 @@ data_loc <- data.frame(source = file_list) %>%
     "longitude" = lon,
     "latitude" = lat,
     "DEVICE_LOCATIONTYPE" = loc_inout
-  )
+  ) %>% 
+  mutate(site_id = label)
 ```
 
 ```{r cleaning_function}
@@ -131,7 +132,9 @@ clean_data <- function(input_file, renames = input_renames, selects = input_sele
       loc_ab = replace_na(loc_ab, "A"),
       loc_ab = factor(loc_ab, levels = c("A", "B"))
     ) %>% 
-    select(!c(source, loc_path))
+    select(!c(source, loc_path)) %>% 
+    # Adding site_id variable so that same functions from API can also apply here
+    mutate(site_id = label)
 }
 ```
 
@@ -212,13 +215,11 @@ cols_to_pivot <- data_pa_raw %>%
   names()
 
 data_pa <- data_pa_raw %>% 
-  group_by(label, datetime) %>% 
+  group_by(site_id, datetime) %>% 
   pivot_wider(names_from = loc_ab, values_from = all_of(cols_to_pivot)) %>% 
-  group_by(label, datetime) %>% 
+  group_by(site_id, datetime) %>% 
   summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
   apply_qc()
-  #apply_qc() %>% 
-  #drop_na(where(is.numeric))
 ```
 
 ```{r corrections}
@@ -234,16 +235,19 @@ apply_correction_factors<- function(data, grouping_vars){
 }
 
 data_pa_hourly <- data_pa %>% 
-  apply_correction_factors(grouping_vars = vars(label, date, date_hour)) %>% 
+  apply_correction_factors(grouping_vars = vars(site_id, date, date_hour)) %>% 
   apply_date_grouping() %>% 
   apply_hour_grouping()
 
 data_pa_daily <- data_pa %>% 
-  apply_correction_factors(grouping_vars = vars(label, date)) %>% 
+  apply_correction_factors(grouping_vars = vars(site_id, date)) %>% 
   apply_date_grouping()
+```
 
-data_pa_hourly %>% 
-  rename(site_id = label) %>% 
+```{r mapping_test, eval=FALSE}
+data_pa_hourly %>%
+  rename(site_id = label) %>%
   map_q(value = pm25_atm, location_data = (data_loc %>% rename(site_id = label)), grouping_var = hour_tag)
 ```
+
 
