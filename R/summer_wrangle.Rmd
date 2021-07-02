@@ -40,9 +40,9 @@ input_skips <- c(
 
 # Use format of "Original name" = "new_name". Caveat: do NOT rename the timestamp variable here
 input_renames <- c(
-  "PM1.0_CF1_ug/m3" = "pm1",
-  "PM2.5_CF1_ug/m3" = "pm25",
-  "PM10.0_CF1_ug/m3" = "pm10",
+  "PM1.0_CF1_ug/m3" = "pm1_cf1",
+  "PM2.5_CF1_ug/m3" = "pm25_cf1",
+  "PM10.0_CF1_ug/m3" = "pm10_cf1",
   "UptimeMinutes" = "uptime",
   "RSSI_dbm" = "rssi",
   "Temperature_F" = "temperature",
@@ -57,7 +57,7 @@ input_renames <- c(
 
 # List of renamed variables to keep (timestamp automatically kept)
 input_selects <- c(
-  "pm25",
+  "pm25_cf1",
   "pm25_atm",
   "temperature",
   "humidity"

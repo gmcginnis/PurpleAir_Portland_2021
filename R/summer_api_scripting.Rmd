@@ -28,7 +28,7 @@ library(ggmap)
 ```
 
 
-```{r inputs}
+```{r inputs_fire,eval=FALSE}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
 input_startdate <- "2020-09-01"
 input_enddate <- "2020-09-30"
@@ -76,6 +76,53 @@ input_hour_starts <- c(5, 12, 17, 21)
 # End hours will be automatically generated
 ```
 
+```{r inputs_recent}
+# REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
+input_startdate <- "2021-06-01"
+input_enddate <- "2021-06-30"
+
+## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
+# Grab data for outdoor sensors?
+include_outside <- TRUE
+# Grab data for indoor sensors?
+include_inside <- TRUE
+
+## INPUTS FOR GETTING PAS & PAT
+## The following are optional but recommended. Set to NULL if not interested in filtering by the following.
+# State of monitors to include. If NULL/unspecified, all monitors specified in the above boundaries will be included regardless of state
+input_stateCode <- "OR"
+
+# Boundaries (in degrees) of monitors to include. It can also evaluate n/s or e/w pairs of bounds individually.
+input_north <- 45.6
+input_south <- 45.4
+input_east <- -122.58
+input_west <- -122.854
+
+# Labels of monitors to include. If NULL/unspecified, all monitors will be included.
+# The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
+# Use the following format (capitalization matters):
+#input_labels <- c("se", "SE", "Se", "STAR", "PSU")
+input_labels <- NULL
+
+## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run date grouping?
+run_date_grouping <- TRUE
+# Date grouping categories:
+input_date_tags <- c("Before", "After")
+# Start dates (in a list, "YYYY-MM-DD")
+input_date_starts <- c("2021-06-01", "2021-06-15")
+# End dates (in a list, "YYYY-MM-DD")
+input_date_ends <- c("2021-06-14", "2021-06-30")
+
+## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run hour grouping?
+run_hour_grouping <- TRUE
+# Hour grouping categories:
+input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
+# Start hours (in a list, using full hours in 24 hour format)
+input_hour_starts <- c(5, 12, 17, 21)
+# End hours will be automatically generated
+```
 
 ```{r getting_pas}
 get_area_pas <- function(state_code = input_stateCode,
@@ -269,6 +316,11 @@ raw_data <- data_a %>%
 print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
 ```
 
+```{r}
+remove(data_a, data_b)
+```
+
+
 ```{r timezone_function}
 # Time zones are reported as a variable when downloading the data. Time stamps are reported in UTC. The following will convert the time stamps to said reported time zone.
 # If more than one time zone is reported in the data, the conversion will use the time zone most frequently used in the data set. This is because no more than one time zone can be applied to a date time variable.
@@ -310,7 +362,7 @@ apply_qc <- function(dataset, avg_ab = TRUE){
       # All columns that start with 'pm25'
       vars(starts_with("pm25")),
       # Filtering such that only values 0:2000 are kept
-      any_vars(between(., 0, 2000))
+      all_vars(between(., 0, 2000))
     ) %>% 
     filter(
       # Filtering temperature for -40:185
@@ -353,7 +405,7 @@ data_pm25 <- raw_data %>%
   select(site_id, datetime_utc, datetime, date, date_hour, everything())
 
 # Cleaning environment
-remove(adjust_timezone)
+#remove(adjust_timezone)
 ```
 
 ```{r applying_epa_corr}
@@ -873,10 +925,14 @@ load("data/summer/sep2020.RData")
 ```
 
 
-
 ```{r map_tests, eval = FALSE}
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
+map_q(data_hourly, value=epa_2021)
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag, grouping_var_2 = date_tag)
+data_hourly %>% 
+  # filter(site_id != "01cff4b431a1862a_26757",
+  #        site_id != "65b3dca6d412ed31_55407") %>% 
+  map_q(value = epa_2021, grouping_var_2 = hour_tag, grouping_var = date_tag, exclude = c("Before", "Fire"))
 
 map_q(data_daily, value = epa_2020, grouping_var = date_tag, inside = FALSE)
 
