@@ -76,10 +76,10 @@ input_hour_starts <- c(5, 12, 17, 21)
 # End hours will be automatically generated
 ```
 
-```{r inputs_recent}
+```{r inputs_4th, eval=FALSE}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
-input_startdate <- "2021-06-01"
-input_enddate <- "2021-06-30"
+input_startdate <- "2020-07-01"
+input_enddate <- "2020-07-08"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
 # Grab data for outdoor sensors?
@@ -108,11 +108,11 @@ input_labels <- NULL
 # Run date grouping?
 run_date_grouping <- TRUE
 # Date grouping categories:
-input_date_tags <- c("Before", "After")
+input_date_tags <- c("Before", "Independence Day", "After")
 # Start dates (in a list, "YYYY-MM-DD")
-input_date_starts <- c("2021-06-01", "2021-06-15")
+input_date_starts <- c("2020-07-01", "2020-07-04", "2020-07-06")
 # End dates (in a list, "YYYY-MM-DD")
-input_date_ends <- c("2021-06-14", "2021-06-30")
+input_date_ends <- c("2020-07-03", "2020-07-05", "2020-07-08")
 
 ## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
 # Run hour grouping?
@@ -124,21 +124,73 @@ input_hour_starts <- c(5, 12, 17, 21)
 # End hours will be automatically generated
 ```
 
+```{r inputs_recent, eval=FALSE}
+# REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
+input_startdate <- "2021-06-01"
+input_enddate <- "2021-06-30"
+
+## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
+# Grab data for outdoor sensors?
+include_outside <- TRUE
+# Grab data for indoor sensors?
+include_inside <- FALSE
+
+## INPUTS FOR GETTING PAS & PAT
+## The following are optional but recommended. Set to NULL if not interested in filtering by the following.
+# State of monitors to include. If NULL/unspecified, all monitors specified in the above boundaries will be included regardless of state
+input_stateCode <- "OR"
+
+# Boundaries (in degrees) of monitors to include. It can also evaluate n/s or e/w pairs of bounds individually.
+input_north <- 45.6
+input_south <- 45.4
+input_east <- -122.58
+input_west <- -122.854
+
+# Labels of monitors to include. If NULL/unspecified, all monitors will be included.
+# The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
+# Use the following format (capitalization matters):
+#input_labels <- c("se", "SE", "Se", "STAR", "PSU")
+input_labels <- NULL
+
+## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run date grouping?
+run_date_grouping <- FALSE
+# Date grouping categories:
+input_date_tags <- c("Before", "Independence Day", "After")
+# Start dates (in a list, "YYYY-MM-DD")
+input_date_starts <- c("2020-07-01", "2020-07-04", "2020-07-06")
+# End dates (in a list, "YYYY-MM-DD")
+input_date_ends <- c("2020-07-03", "2020-07-05", "2020-07-08")
+
+## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run hour grouping?
+run_hour_grouping <- FALSE
+# Hour grouping categories:
+input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
+# Start hours (in a list, using full hours in 24 hour format)
+input_hour_starts <- c(5, 12, 17, 21)
+# End hours will be automatically generated
+```
+
 ```{r getting_pas}
 get_area_pas <- function(state_code = input_stateCode,
                          west = input_west, east = input_east, south = input_south, north = input_north,
                          labels = input_labels,
-                         datestamp = input_enddate){
+                         datestamp = input_enddate, startdate = input_startdate){
   
   setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
   
   labels_string <- paste0("(",paste(labels, collapse = ")|("), ")")
   
+  lookback_days <- as.numeric(as.Date(datestamp) - as.Date(startdate)) + 1
+  
   pas <- pas_load(
     # archival allows for retrieval of sensor info even if they are no longer reporting
     archival = TRUE,
     # datestamp is important when loading historical data, as not all monitors might be actively reporting anymore
-    datestamp = str_replace_all(as.character(datestamp), "-", "")
+    datestamp = str_replace_all(as.character(datestamp), "-", ""),
+    # Retries (default: 30 days) are the maximum number of days to go back and try to load data if the requested date cannot be retrieved
+    retries = lookback_days
   )
   
   if(is.null(state_code) == TRUE){
@@ -156,10 +208,13 @@ get_area_pas <- function(state_code = input_stateCode,
 }
 
 pas_area <- get_area_pas()
+```
 
+```{r}
 # Cleaning environment
 remove(get_area_pas, input_stateCode, input_north, input_east, input_south, input_west, input_labels)
 ```
+
 
 ```{r getting_id}
 ids_outside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = TRUE)
@@ -167,25 +222,25 @@ ids_inside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = FALSE)
 
 if(include_outside == TRUE & include_inside == TRUE){
   ids <- c(ids_outside, ids_inside)
-  inout_report <- ("Both indoor and outdoor sensor data will be loaded.")
+  inout_report <- print("Both indoor and outdoor sensor data will be loaded.")
 }
 if(include_outside == TRUE & include_inside == FALSE){
   ids <- ids_outside
-  inout_report <- ("Only outdoor sensor data will be loaded.")
+  inout_report <- print("Only outdoor sensor data will be loaded.")
 }
 if(include_outside == FALSE & include_inside == TRUE){
   ids <- ids_inside
-  inout_report <- ("Only indoor sensor data will be loaded.")
+  inout_report <- print("Only indoor sensor data will be loaded.")
 }
 if(include_outside == FALSE & include_inside == FALSE){
-  inout_report <- ("INPUT ERROR: Please set `include_outside` and/or `include_inside` to TRUE.")
+  inout_report <- warning("INPUT ERROR: Please set `include_outside` and/or `include_inside` to TRUE.")
   stop(inout_report)
 }
 
-print(inout_report)
+inout_report
 
 if(length(ids) > 100){
-  print("CAUTION: More than 100 monitors selected. Data processing will take time. Consider applying more area filters first.")
+  warning("CAUTION: More than 100 monitors selected. Data processing will take significant time. Consider applying more area filters first!")
 }
 print(paste("Number of selected monitors:", length(ids)))
 
@@ -264,7 +319,7 @@ for (id in ids[1:idCount]) {
   
   count <- count + 1
   print(sprintf("Working on %s (%d/%d) ...", id, count, idCount))
-    
+  
   ####
   pat_single <- pat_downloadParseRawData(
     id = id,
@@ -317,9 +372,112 @@ print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
 ```
 
 ```{r}
-remove(data_a, data_b)
-```
+## Setup for iteration
+# URL to be used to grab data
+input_baseUrl <- "https://api.thingspeak.com/channels/"
+# Number of IDs to be evaluated. Used for console messages.
+id_count <- length(ids)
+# Starting the counts at 0; will grow upon iteration
+count <- 0 
+# Creating empty objects to be filled upon iteration appends/row-binds
+pat_single <- list()
+raw_meta <- data.frame()
+data_a <- data.frame()
+data_b <- data.frame()
+# Columns of interest
+input_cols_to_select <- c("created_at", "temperature", "humidity", "pm2.5_cf1", "pm2.5_atm")
 
+# Sequencing dates into a list by 1 week gaps due to API limitations
+date_sequence <- seq(from = as.Date(input_startdate), to = as.Date(input_enddate), by = "week")
+# Adding end date to the end of the sequence if not already present in the set
+if(tail(date_sequence, n=1) != input_enddate){
+  date_sequence <- date_sequence %>% 
+    append(input_enddate)
+}
+
+# Iteration
+for (id in ids[1:id_count]) {
+  
+  # Message to report progress
+  count <- count + 1
+  print(sprintf("Working on %s (%d/%d) ...", id, count, id_count))
+  
+  print(sprintf("... from %s to %s", date_sequence[1], date_sequence[2]))
+  
+  # Creating single PAT for first date range
+  pat_single <- pat_downloadParseRawData(
+    id = id,
+    label = NULL,
+    pas = pas_area,
+    startdate = date_sequence[1],
+    enddate = date_sequence[2],
+    baseUrl = input_baseUrl
+  )
+  
+  data_a_single <- pat_single$A_PRIMARY %>% 
+    select(intersect(input_cols_to_select, names(.))) %>% 
+    mutate("site_id" = id)
+  
+  data_b_single <- pat_single$B_PRIMARY %>%
+    select(intersect(input_cols_to_select, names(.))) %>% 
+    mutate("site_id" = id)
+  
+  # If there is more than a single pair of dates in the date sequence
+  if (length(date_sequence) > 2) {
+    
+    for (i in 2:(length(date_sequence)-1) ) {
+      
+      print(sprintf("... from %s to %s", date_sequence[i], date_sequence[i+1]))
+      
+      pat_single_more <- pat_downloadParseRawData(
+        id = id,
+        label = NULL,
+        pas = pas_area,
+        startdate = date_sequence[i],
+        enddate = date_sequence[i + 1],
+        baseUrl = input_baseUrl
+      )
+      
+      data_a_more <- pat_single_more$A_PRIMARY %>% 
+        select(intersect(input_cols_to_select, names(.))) %>% 
+        mutate("site_id" = id)
+      
+      data_b_more <- pat_single_more$B_PRIMARY %>% 
+        select(intersect(input_cols_to_select, names(.))) %>% 
+        mutate("site_id" = id)
+      
+      data_a_single <- rbind(data_a_single, data_a_more)
+      data_b_single <- rbind(data_b_single, data_b_more)
+      
+      # Cleaning environment
+      remove(pat_single_more, data_a_more, data_b_more, i)
+    }
+  }
+  
+  raw_meta_single <- pat_single$meta %>% 
+    drop_na(DEVICE_LOCATIONTYPE) %>% 
+    mutate("site_id" = id)
+  
+  raw_meta <- rbind(raw_meta, raw_meta_single)
+  data_a <- rbind(data_a, data_a_single)
+  data_b <- rbind(data_b, data_b_single)
+  
+  # Cleaning environment
+  remove(data_a_single, data_b_single, pat_single, raw_meta_single)
+}
+
+# Joining data frames
+raw_data <- full_join(data_a, data_b, # Data sets to join
+                      by = c("created_at", "site_id"), # Columns to unite
+                      suffix = c("_A", "_B")) %>% # Adding suffixes for distinct columns
+  # Rounding for low time increments, to allow for mostly parallel A & B reports
+  mutate(datetime = floor_date(created_at, unit = "2 minutes")) %>% 
+  group_by(site_id, datetime) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE)
+
+# Review
+print(sprintf("Successfully created %d/%d pat objects.", length(unique(raw_data$site_id)), id_count))
+```
 
 ```{r timezone_function}
 # Time zones are reported as a variable when downloading the data. Time stamps are reported in UTC. The following will convert the time stamps to said reported time zone.
@@ -362,7 +520,7 @@ apply_qc <- function(dataset, avg_ab = TRUE){
       # All columns that start with 'pm25'
       vars(starts_with("pm25")),
       # Filtering such that only values 0:2000 are kept
-      all_vars(between(., 0, 2000))
+      any_vars(between(., 0, 2000))
     ) %>% 
     filter(
       # Filtering temperature for -40:185
@@ -443,19 +601,19 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
   count_to_drop <- ceiling(time_unit*(epa_percent/100))
   
   # Creating a data frame of groups to be removed due to low data quantity
-  drop_set <- dataset %>% 
+  drop_quantity <- dataset %>% 
     group_by_at(groupings_drop) %>% 
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
     group_by_at(groupings) %>% 
     count() %>% 
     filter(n < count_to_drop)
   
-  print("Values to be dropped via an anti-join:")
-  print(drop_set)
+  print("Values to be dropped via an anti-join due to low data quantity:")
+  print(drop_quantity)
   
-  dataset %>% 
-    anti_join(drop_set) %>% 
-    group_by_at(groupings) %>% 
+  drop_ab <- dataset %>% 
+    group_by(site_id, date) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
     mutate(
       # Difference between A&B sensors
       diff = pm25_cf1_A-pm25_cf1_B,
@@ -468,9 +626,14 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
         TRUE ~ FALSE
         )
       ) %>% 
-    # Filtering out values which we have determined to drop
-    filter(drop != TRUE) %>% 
-    select(!c(drop, diff, per_diff)) %>% 
+    filter(drop == TRUE) %>% 
+    select(site_id, date)
+  print("Days (by sensor) to be dropped via an anti-join due to A & B sensor disagreement:")
+  print(drop_ab)
+  
+  dataset %>% 
+    anti_join(drop_quantity) %>% 
+    anti_join(drop_ab) %>% 
     group_by_at(groupings) %>% 
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
     rowwise() %>% 
@@ -481,10 +644,16 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
       epa_2021 = case_when(
         pm25_cf1 <= 343 ~ 0.52*pm25_cf1 - 0.086*humidity + 5.75,
         pm25_cf1 > 343 ~ 0.46*pm25_cf1 + (3.93*10^(-4))*(pm25_cf1^2) +2.97
-        )
+      ),
+      # US-wide correction factor published in late 2020 using CF=ATM values
+      epa_atm = case_when(
+        pm25_atm < 50 ~ 0.25*pm25_atm - 0.086*humidity + 5.75,
+        pm25_atm >= 50 & pm25_atm < 229 ~ 0.786*pm25_atm - 0.086*humidity + 5.75,
+        pm25_atm > 229 ~ 0.69*pm25_atm + (8.84*10^-4)*(pm25_atm^2) + 2.97
+      )
       ) %>% 
     # Dropping negative values
-    filter_at(vars(epa_2020, epa_2021), any_vars(. >= 0))
+    filter_at(vars(epa_2020, epa_2021, epa_atm), all_vars(. >= 0))
 }
 ```
 
@@ -757,6 +926,10 @@ data_hourly <- data_pm25 %>%
   apply_corrections(daily = TRUE, hourly = TRUE) %>% 
   apply_hour_tags() %>% 
   apply_date_tags()
+
+data_diurnal <- data_pm25 %>% 
+  apply_corrections(daily = FALSE, hourly = TRUE) %>% 
+  apply_hour_tags()
 ```
 
 ```{r map_function}
@@ -929,6 +1102,9 @@ load("data/summer/sep2020.RData")
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
 map_q(data_hourly, value=epa_2021)
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag, grouping_var_2 = date_tag)
+map_q(data_hourly, value = pm25_cf1, grouping_var = hour_tag, grouping_var_2 = date_tag)
+map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, grouping_var_2 = date_tag)
+
 data_hourly %>% 
   # filter(site_id != "01cff4b431a1862a_26757",
   #        site_id != "65b3dca6d412ed31_55407") %>% 
