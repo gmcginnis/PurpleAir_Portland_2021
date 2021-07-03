@@ -1,0 +1,160 @@
+---
+title: "summer_bc"
+author: "Gillian McGinnis"
+date: "7/2/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(lubridate)
+library(ggmap)
+```
+
+```{r inputs}
+#file_data_folder <- "Data34_210701_15h04m"
+file_data_folder <- "DST-BC-TEST-DATA-1July2021"
+
+# Use a valid Olson name (OlsonNames())
+# Reported TZ for the data can be found in the settings file
+time_zone <- "America/Los_Angeles"
+
+# Column names
+# This can be set to NULL if the settings file is in the folder of data
+col_names <- c("TS", "Iref", "Isig", "ATN", "BC", "RH", "T", "FR", "Vbat", "GPSlat", "GPSlong")
+```
+
+```{r loading_data}
+file_folder <- "data/black_carbon"
+file_path <- file.path(file_folder, file_data_folder)
+
+
+file_list <- list.files(path = file_path)
+
+file_data <- str_subset(file_list, "^Data")
+
+if(is.null(col_names) == TRUE){
+  file_settings <- str_subset(file_list, "^Settings")
+
+  # A wonky way of extracting column name information
+  col_names <- read.csv(file.path(file_folder, file_data_folder, file_settings),
+                        skip = 3,
+                        header = FALSE,
+                        row.names = 1,
+                        sep = " ") %>% 
+    str_replace_all(",", "")
+}
+
+data_raw <- read_csv(file.path(file_folder, file_data_folder, file_data),
+                     col_names = col_names) %>% 
+  mutate(TS = as.POSIXct(str_replace(TS, "\\$", ""), tz = time_zone))
+```
+
+```{r clean_environment}
+remove(time_zone, col_names, list = ls(pattern = "file_"))
+```
+
+```{r tagging_data}
+data_tagged <- data_raw %>% 
+  mutate(
+    hour = hour(TS),
+    minute = minute(TS)
+  ) %>% 
+  mutate(
+    # There are neater ways to do this but for now this works :)
+    event = fct_inorder(case_when(
+      hour <= 16 | (hour == 17 & minute < 15) ~ "office",
+      hour == 17 & minute >= 15 & minute < 40 ~ "ladd",
+      (hour == 17 & minute >= 40) | (hour == 18) | (hour == 19) | (hour == 20 & minute < 10) ~ "meal",
+      (hour == 20 & minute >= 10 & minute < 35) ~ "downtown",
+      (hour == 20 & minute >= 35) | hour == 21 ~ "home"
+    )),
+    tag = fct_collapse(
+      event,
+      "static" = c("office", "meal", "home"),
+      "commuting" = c("ladd", "downtown")
+    )
+  )
+```
+
+
+```{r commute_viz}
+viz_scatter_full <- data_tagged %>% 
+  filter(BC >= 0) %>% 
+  ggplot(aes(TS, BC)) +
+  geom_point(alpha = 0.3, aes(color = event, shape = tag)) +
+  scale_color_brewer(palette = "Set1") +
+  stat_smooth() +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical"
+  )
+
+viz_scatter_full +
+  labs(
+    title = "unaveraged, with loess line of best fit",
+    subtitle = "BC < 0 removed"
+  )
+
+viz_scatter_full +
+  ylim(0, 5) +
+  labs(
+    title = "unaveraged, with loess line of best fit; y scale limits set to 0:5",
+    subtitle = "BC < 0 removed"
+  )
+
+viz_scatter_min <- data_tagged %>% 
+  filter(BC >= 0) %>% 
+  mutate(TS = round_date(TS, unit = "minute")) %>% 
+  group_by(TS, event, tag) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+  ggplot(aes(TS, BC)) +
+  geom_point(alpha = 0.7, aes(color = event, shape = tag)) +
+  scale_color_brewer(palette = "Set1") +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical"
+  )
+
+viz_scatter_min +
+  labs(
+    title = "averaged by minute of each hour",
+    subtitle = "BC < 0 removed"
+  )
+
+viz_scatter_min +
+  ylim(0, 4) +
+  labs(
+    title = "averaged by minute of each hour; y scale limits set to 0:4",
+    subtitle = "BC < 0 removed"
+  )
+
+viz_boxplot <- data_tagged %>% 
+  filter(BC >= 0) %>% 
+  ggplot(aes(event, BC, color = tag)) +
+  geom_jitter(alpha = 0.1, color = "black", shape = 1) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+viz_boxplot +
+  labs(
+    title = "boxplot w underlying jittered points by event",
+    subtitle = "BC < 0 removed"
+  )
+
+viz_boxplot +
+  ylim(0, 5) +
+  labs(
+    title = "boxplot w underlying jittered points by event; y scale limits set to 0:5",
+    subtitle = "BC < 0 removed"
+  )
+
+```
+
