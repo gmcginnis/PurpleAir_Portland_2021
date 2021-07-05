@@ -1,0 +1,145 @@
+---
+title: "mapping_tutorial"
+author: "Gillian McGinnis"
+date: "7/5/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(lubridate)
+library(ggmap)
+library(leaflet)
+library(viridis)
+```
+
+```{r loading_data}
+file_path <- "https://raw.githubusercontent.com/gmcginnis/PurpleAir_Portland_2021/main/data/black_carbon/DST-BC-test-data-1July2021/Data34_2021-07-01.txt"
+
+# Use a valid Olson name; see options with OlsonNames()
+# Reported TZ for the data can be found in the settings file
+time_zone <- "America/Los_Angeles"
+
+col_names <- c("TS", "Iref", "Isig", "ATN", "BC", "RH", "T", "FR", "Vbat", "GPSlat", "GPSlong")
+
+raw_bc_data <- read_csv(file_path,
+                 col_names = col_names) %>% 
+  mutate(TS = as.POSIXct(str_replace(TS, "\\$", ""), tz = time_zone))
+```
+
+```{r clean_environment}
+remove(time_zone, col_names, list = ls(pattern = "file_"))
+```
+
+```{r commute_tags}
+raw_bc_data %>% 
+  mutate(
+    event = fct_inorder(case_when(
+      TS >= hm("16:00") & TS < hm("17:15") ~ "office",
+      TS >= hm("17:15") & TS < hm("17:40") ~ "ladd",
+      TS >= hm("17:40") & TS < hm("20:10") ~ "meal",
+      TS >= hm("20:10") & TS < hm("20:35") ~ "downtown",
+      TS >= hm("20:35") & TS < hm("22:00") ~ "home"
+    ))
+  )
+
+data_bc <- raw_bc_data %>% 
+  mutate(
+    hour = hour(TS),
+    minute = minute(TS)
+  ) %>% 
+  mutate(
+    # There are much more elegant ways to do this but for now it works
+    event = fct_inorder(case_when(
+      hour <= 16 | (hour == 17 & minute < 15) ~ "office",
+      hour == 17 & minute >= 15 & minute < 40 ~ "ladd",
+      (hour == 17 & minute >= 40) | (hour == 18) | (hour == 19) | (hour == 20 & minute < 10) ~ "meal",
+      (hour == 20 & minute >= 10 & minute < 35) ~ "downtown",
+      (hour == 20 & minute >= 35) | hour == 21 ~ "home"
+    )),
+    tag = fct_collapse(
+      event,
+      "static" = c("office", "meal", "home"),
+      "commuting" = c("ladd", "downtown")
+    )
+  )
+
+# Filtering for reasonable values for mapping
+data_bc_map <- data_bc %>% 
+  filter(
+    between(GPSlat, 40, 50),
+    between(GPSlong, -125, -115),
+    BC >= 0
+  )
+```
+
+```{r commute_qmap}
+# qmplot is the "quick map plot" which will make a static plot that you can add ggplot2 layers to
+
+qmplot(
+    data = data_bc_map,
+    # lat and lon must be specified if named unusually (as they are here)
+    x = GPSlong, y = GPSlat,
+    # Setting geom to blank b/c points will be added as a separate layer
+    geom = "blank",
+    ## optional aesthetic arguments:
+    #zoom = 11, # zoom of the map
+    maptype = "toner-lite", # See ?get_map() or http://maps.stamen.com/ for map type options
+    darken = c(0.5, "black") # map tint overlay
+  ) +
+  # Adding the layer of points
+  geom_point(
+    # setting the color of the dots to be based on the value of BC in the data set
+    aes(color = BC),
+    alpha = 0.8, # setting transparency (default=1)
+    size = 1.5 # setting size of the point (default=1)
+  ) +
+  # Setting a custom color scale
+  scale_color_viridis(
+    # view all options on the viridis website
+    option = "turbo",
+    # Manually set scale to start at 0 regardless of the minimum in the data set
+    limits = c(0, NA)
+  ) +
+  # Void theme is good for maps because we don't need lat & long labeled
+  theme_void() +
+  # Setting legend to the bottom
+  theme(legend.position = "bottom")
+```
+
+```{r commute_leaflet}
+# leaflet will create an interactive map widget
+# it does not use ggplot2 format
+
+# Creating a color palette
+bc_pal <- colorNumeric(palette = "viridis", domain = data_bc_map$BC)
+
+# (optional) Creating argument for the pop up that will appear when one clicks a point
+# can use HTML arguments for text settings
+bc_popup <- paste0("<b>Timestamp:</b> ", data_bc_map$TS,
+                  "<br><b>BC:</b> ", data_bc_map$BC,
+                  "<br><b>Movement:</b> ", data_bc_map$tag,
+                  " (", data_bc_map$event, ")")
+
+# can set the data frame in the opening argument, or in individual layers
+leaflet(data = data_bc_map) %>% 
+  # Adding tiles (making the map)-- can use addTiles() or provider tiles as below
+  # Preview provider options at https://leaflet-extras.github.io/leaflet-providers/preview/
+  addProviderTiles(providers$CartoDB.DarkMatter) %>% 
+  # Adding points on the map
+  addCircles(
+    # use a tilde when referring to variables in the data set
+    lng = ~GPSlong,
+    lat = ~GPSlat,
+    # for color, the palette made above acts as a function for the specified variable
+    color = ~bc_pal(BC),
+    # What will display when the point is hovered over:
+    label = ~as.character(BC),
+    # What will display when the point is clicked:
+    popup = bc_popup
+  )
+```
