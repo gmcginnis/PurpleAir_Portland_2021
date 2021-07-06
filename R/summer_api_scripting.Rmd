@@ -818,7 +818,7 @@ data_hourly <- data_hourly_epa %>%
 remove(data_daily_lrapa, data_daily_epa, data_hourly_lrapa, data_hourly_epa)
 ```
 
-```{r apply_date_tags_set}
+```{r apply_date_tags}
 apply_date_tags <- function(dataset,
                         starts = input_date_starts, ends = input_date_ends, tags = input_date_tags,
                         date_stamp = "17 Jan 1999"){
@@ -833,7 +833,7 @@ apply_date_tags <- function(dataset,
     mutate(
       start_stamp = date_format(starts),
       end_stamp = date_format(ends),
-      date_tag = fct_inorder(paste0(tags, " (", start_stamp, " through ", end_stamp, ")"))
+      date_tag = fct_inorder(paste0(tags, "\n(", start_stamp, " through ", end_stamp, ")"))
     ) %>% 
     pivot_longer(cols = c(starts, ends), values_to = "date") %>% 
     group_by(date_tag) %>% 
@@ -856,7 +856,7 @@ apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_ho
     mutate(
       ends = lead(starts - 1),
       ends = replace_na(ends, starts[1]-1),
-      tags = paste0(tags, " (", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
+      tags = paste0(tags, "\n(", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
     ) %>% 
     arrange(starts) %>% 
     mutate(hour_tag = fct_inorder(tags)) %>%
