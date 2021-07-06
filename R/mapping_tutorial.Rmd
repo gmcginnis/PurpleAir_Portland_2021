@@ -36,17 +36,6 @@ remove(time_zone, col_names, list = ls(pattern = "file_"))
 ```
 
 ```{r commute_tags}
-raw_bc_data %>% 
-  mutate(
-    event = fct_inorder(case_when(
-      TS >= hm("16:00") & TS < hm("17:15") ~ "office",
-      TS >= hm("17:15") & TS < hm("17:40") ~ "ladd",
-      TS >= hm("17:40") & TS < hm("20:10") ~ "meal",
-      TS >= hm("20:10") & TS < hm("20:35") ~ "downtown",
-      TS >= hm("20:35") & TS < hm("22:00") ~ "home"
-    ))
-  )
-
 data_bc <- raw_bc_data %>% 
   mutate(
     hour = hour(TS),
@@ -55,21 +44,23 @@ data_bc <- raw_bc_data %>%
   mutate(
     # There are much more elegant ways to do this but for now it works
     event = fct_inorder(case_when(
-      hour <= 16 | (hour == 17 & minute < 15) ~ "office",
-      hour == 17 & minute >= 15 & minute < 40 ~ "ladd",
-      (hour == 17 & minute >= 40) | (hour == 18) | (hour == 19) | (hour == 20 & minute < 10) ~ "meal",
-      (hour == 20 & minute >= 10 & minute < 35) ~ "downtown",
-      (hour == 20 & minute >= 35) | hour == 21 ~ "home"
+      hour <= 16 | (hour == 17 & minute < 15) ~ "Office",
+      hour == 17 & minute >= 15 & minute < 40 ~ "Ladd",
+      (hour == 17 & minute >= 40) | (hour == 18) | (hour == 19) | (hour == 20 & minute < 10) ~ "Meal",
+      (hour == 20 & minute >= 10 & minute < 35) ~ "Downtown",
+      (hour == 20 & minute >= 35) | hour == 21 ~ "Home"
     )),
-    tag = fct_collapse(
+    # Making another factor by collapsing a previously created one
+    movement = fct_collapse(
       event,
-      "static" = c("office", "meal", "home"),
-      "commuting" = c("ladd", "downtown")
+      "Stationary" = c("Office", "Meal", "Home"),
+      "Commuting" = c("Ladd", "Downtown")
     )
-  )
-
-# Filtering for reasonable values for mapping
-data_bc_map <- data_bc %>% 
+  ) %>% 
+  # removing variables no longer needed
+  select(!c(hour, minute)) %>% 
+  # Filtering for reasonable values for mapping
+  # if just looking at temporal rather than spatiotemporal data, consider removing these GPS restrictions
   filter(
     between(GPSlat, 40, 50),
     between(GPSlong, -125, -115),
@@ -81,7 +72,7 @@ data_bc_map <- data_bc %>%
 # qmplot is the "quick map plot" which will make a static plot that you can add ggplot2 layers to
 
 qmplot(
-    data = data_bc_map,
+    data = data_bc,
     # lat and lon must be specified if named unusually (as they are here)
     x = GPSlong, y = GPSlat,
     # Setting geom to blank b/c points will be added as a separate layer
@@ -89,7 +80,7 @@ qmplot(
     ## optional aesthetic arguments:
     #zoom = 11, # zoom of the map
     maptype = "toner-lite", # See ?get_map() or http://maps.stamen.com/ for map type options
-    darken = c(0.5, "black") # map tint overlay
+    darken = c(0.5, "black") # map tint overlay: alpha and color respectively
   ) +
   # Adding the layer of points
   geom_point(
@@ -100,7 +91,7 @@ qmplot(
   ) +
   # Setting a custom color scale
   scale_color_viridis(
-    # view all options on the viridis website
+    # can view all options on the viridis website; turbo is a new one
     option = "turbo",
     # Manually set scale to start at 0 regardless of the minimum in the data set
     limits = c(0, NA)
@@ -116,17 +107,17 @@ qmplot(
 # it does not use ggplot2 format
 
 # Creating a color palette
-bc_pal <- colorNumeric(palette = "viridis", domain = data_bc_map$BC)
+bc_pal <- colorNumeric(palette = "viridis", domain = data_bc$BC)
 
 # (optional) Creating argument for the pop up that will appear when one clicks a point
 # can use HTML arguments for text settings
-bc_popup <- paste0("<b>Timestamp:</b> ", data_bc_map$TS,
-                  "<br><b>BC:</b> ", data_bc_map$BC,
-                  "<br><b>Movement:</b> ", data_bc_map$tag,
-                  " (", data_bc_map$event, ")")
+bc_popup <- paste0("<b>Timestamp:</b> ", data_bc$TS,
+                  "<br><b>BC:</b> ", data_bc$BC,
+                  "<br><b>Movement:</b> ", data_bc$movement,
+                  " (", data_bc$event, ")")
 
 # can set the data frame in the opening argument, or in individual layers
-leaflet(data = data_bc_map) %>% 
+leaflet(data = data_bc) %>% 
   # Adding tiles (making the map)-- can use addTiles() or provider tiles as below
   # Preview provider options at https://leaflet-extras.github.io/leaflet-providers/preview/
   addProviderTiles(providers$CartoDB.DarkMatter) %>% 
