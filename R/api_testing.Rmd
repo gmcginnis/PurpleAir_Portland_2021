@@ -312,3 +312,150 @@ raw_data <- data_a %>%
 # Review
 print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
 ```
+
+
+Example datasets
+
+```{r inputs_fire,eval=FALSE}
+# REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
+input_startdate <- "2020-09-01"
+input_enddate <- "2020-09-30"
+
+## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
+# Grab data for outdoor sensors?
+include_outside <- TRUE
+# Grab data for indoor sensors?
+include_inside <- TRUE
+
+## INPUTS FOR GETTING PAS & PAT
+## The following are optional but recommended. Set to NULL if not interested in filtering by the following.
+# State of monitors to include. If NULL/unspecified, all monitors specified in the above boundaries will be included regardless of state
+input_stateCode <- "OR"
+
+# Boundaries (in degrees) of monitors to include. It can also evaluate n/s or e/w pairs of bounds individually.
+input_north <- 45.6
+input_south <- 45.4
+input_east <- -122.58
+input_west <- -122.854
+
+# Labels of monitors to include. If NULL/unspecified, all monitors will be included.
+# The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
+# Use the following format (capitalization matters):
+#input_labels <- c("se", "SE", "Se", "STAR", "PSU")
+input_labels <- NULL
+
+## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run date grouping?
+run_date_grouping <- TRUE
+# Date grouping categories:
+input_date_tags <- c("Before", "Fire", "After")
+# Start dates (in a list, "YYYY-MM-DD")
+input_date_starts <- c("2020-09-01", "2020-09-10", "2020-09-20")
+# End dates (in a list, "YYYY-MM-DD")
+input_date_ends <- c("2020-09-09", "2020-09-19", "2020-09-30")
+
+## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run hour grouping?
+run_hour_grouping <- TRUE
+# Hour grouping categories:
+input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
+# Start hours (in a list, using full hours in 24 hour format)
+input_hour_starts <- c(5, 12, 17, 21)
+# End hours will be automatically generated
+```
+
+```{r inputs_4th, eval=FALSE}
+# REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
+input_startdate <- "2020-07-01"
+input_enddate <- "2020-07-08"
+
+## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
+# Grab data for outdoor sensors?
+include_outside <- TRUE
+# Grab data for indoor sensors?
+include_inside <- TRUE
+
+## INPUTS FOR GETTING PAS & PAT
+## The following are optional but recommended. Set to NULL if not interested in filtering by the following.
+# State of monitors to include. If NULL/unspecified, all monitors specified in the above boundaries will be included regardless of state
+input_stateCode <- "OR"
+
+# Boundaries (in degrees) of monitors to include. It can also evaluate n/s or e/w pairs of bounds individually.
+input_north <- 45.6
+input_south <- 45.4
+input_east <- -122.58
+input_west <- -122.854
+
+# Labels of monitors to include. If NULL/unspecified, all monitors will be included.
+# The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
+# Use the following format (capitalization matters):
+#input_labels <- c("se", "SE", "Se", "STAR", "PSU")
+input_labels <- NULL
+
+## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run date grouping?
+run_date_grouping <- TRUE
+# Date grouping categories:
+input_date_tags <- c("Before", "Independence Day", "After")
+# Start dates (in a list, "YYYY-MM-DD")
+input_date_starts <- c("2020-07-01", "2020-07-04", "2020-07-06")
+# End dates (in a list, "YYYY-MM-DD")
+input_date_ends <- c("2020-07-03", "2020-07-05", "2020-07-08")
+
+## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run hour grouping?
+run_hour_grouping <- TRUE
+# Hour grouping categories:
+input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
+# Start hours (in a list, using full hours in 24 hour format)
+input_hour_starts <- c(5, 12, 17, 21)
+# End hours will be automatically generated
+```
+
+```{r inputs_recent, eval=FALSE}
+# REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
+input_startdate <- "2021-07-01"
+input_enddate <- "2021-07-05"
+
+## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
+# Grab data for outdoor sensors?
+include_outside <- TRUE
+# Grab data for indoor sensors?
+include_inside <- FALSE
+
+## INPUTS FOR GETTING PAS & PAT
+## The following are optional but recommended. Set to NULL if not interested in filtering by the following.
+# State of monitors to include. If NULL/unspecified, all monitors specified in the above boundaries will be included regardless of state
+input_stateCode <- "OR"
+
+# Boundaries (in degrees) of monitors to include. It can also evaluate n/s or e/w pairs of bounds individually.
+input_north <- 45.6
+input_south <- 45.4
+input_east <- -122.58
+input_west <- -122.854
+
+# Labels of monitors to include. If NULL/unspecified, all monitors will be included.
+# The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
+# Use the following format (capitalization matters):
+input_labels <- c("se", "SE", "Se", "STAR", "PSU")
+#input_labels <- "Eliot Tower"
+
+## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run date grouping?
+run_date_grouping <- FALSE
+# Date grouping categories:
+input_date_tags <- c("Before", "Independence Day", "After")
+# Start dates (in a list, "YYYY-MM-DD")
+input_date_starts <- c("2020-07-01", "2020-07-04", "2020-07-06")
+# End dates (in a list, "YYYY-MM-DD")
+input_date_ends <- c("2020-07-03", "2020-07-05", "2020-07-08")
+
+## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run hour grouping?
+run_hour_grouping <- TRUE
+# Hour grouping categories:
+input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
+# Start hours (in a list, using full hours in 24 hour format)
+input_hour_starts <- c(5, 12, 17, 21)
+# End hours will be automatically generated
+```
