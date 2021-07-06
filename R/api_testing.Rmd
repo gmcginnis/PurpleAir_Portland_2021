@@ -188,3 +188,127 @@ sites_meta <- bind_rows(patList_transposed[[1]], .id = "site_id")
 sites_data <- bind_rows(patList_transposed[[2]], .id = "site_id")
 ```
 
+
+```{r iteration_old,eval=FALSE}
+# Setup for iteration
+patList <- list()
+idCount <- length(ids)
+count <- 0 
+successCount <- 0
+
+# Iteration
+for (id in ids[1:idCount]) {
+  
+  count <- count + 1
+  print(sprintf("Working on %s (%d/%d) ...", id, count, idCount))
+  
+  # Use a try-block in case we get "no data" errors
+  result <- try({
+    
+    patList[[id]] <- pat_createNew(
+      id = id,
+      label = NULL,   # Label not needed since we have the IDs
+      pas = pas_area,
+      startdate = input_startdate,
+      enddate = input_enddate,
+      baseUrl = "https://api.thingspeak.com/channels/",
+      verbose = FALSE
+    )
+    successCount <- successCount + 1
+    
+  }, silent = FALSE)
+  
+  if ( "try-error" %in% class(result) ) {
+    print(geterrmessage())
+  }
+  
+}
+
+# Review
+print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
+```
+
+```{r cleaning_environment,eval=FALSE}
+remove(input_startdate, input_enddate, idCount, count, successCount, ids, id, result)
+```
+
+```{r transpose_data,eval=FALSE}
+# patList_transposed <- transpose(patList)
+# raw_meta <- bind_rows(patList_transposed[[1]], .id = "site_id")
+# raw_data <- bind_rows(patList_transposed[[2]], .id = "site_id")
+
+patList_transposed <- pmap(patList, bind_rows, .id = "site_id")
+raw_meta <- patList_transposed[[1]]
+raw_data <- patList_transposed[[2]]
+
+# Cleaning environment
+remove(patList_transposed)
+```
+
+```{r, imrpoved_loading, eval=FALSE}
+# Setup for iteration
+idCount <- length(ids)
+count <- 0 
+successCount <- 0
+
+pat_single <- list()
+raw_meta <- data.frame()
+data_a <- data.frame()
+data_b <- data.frame()
+
+# Iteration
+for (id in ids[1:idCount]) {
+  
+  count <- count + 1
+  print(sprintf("Working on %s (%d/%d) ...", id, count, idCount))
+  
+  ####
+  pat_single <- pat_downloadParseRawData(
+    id = id,
+    label = NULL,   # Label not needed since we have the IDs
+    pas = pas_area,
+    startdate = input_startdate,
+    enddate = input_enddate,
+    baseUrl = "https://api.thingspeak.com/channels/"
+  )
+  
+  raw_meta_single <- pat_single$meta %>% 
+    mutate("site_id" = id) %>% 
+    drop_na(DEVICE_LOCATIONTYPE)
+  
+  raw_meta <- rbind(raw_meta, raw_meta_single)
+  
+  data_a_single <- pat_single$A_PRIMARY %>% 
+    select(c(created_at, pm2.5_cf1, pm2.5_atm, temperature, humidity)) %>% 
+    rename(
+      pm25_cf1_A = pm2.5_cf1,
+      pm25_atm_A = pm2.5_atm
+    ) %>% 
+    mutate("site_id" = id)
+  
+  data_a <- rbind(data_a, data_a_single)
+  
+  data_b_single <- pat_single$B_PRIMARY %>%
+    select(c(created_at, pm2.5_cf1, pm2.5_atm)) %>% 
+    rename(
+      pm25_cf1_B = pm2.5_cf1,
+      pm25_atm_B = pm2.5_atm
+    ) %>% 
+    mutate("site_id" = id)
+  
+  data_b <- rbind(data_b, data_b_single)
+  ####
+  successCount <- successCount + 1
+  
+  remove(data_a_single, data_b_single, raw_meta_single, pat_single)
+}
+
+raw_data <- data_a %>% 
+      full_join(data_b) %>% 
+      mutate(datetime = floor_date(created_at, unit = "2 minutes")) %>% 
+      group_by(site_id, datetime) %>% 
+      summarize_if(is.numeric, mean, na.rm = TRUE)
+
+# Review
+print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
+```
