@@ -876,7 +876,7 @@ apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_ho
 }
 ```
 
-```{r applying,eval=FALSE}
+```{r applying}
 applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run_date_grouping, tag_hours = run_hour_grouping){
   
   # Applying correction factors
@@ -1112,22 +1112,6 @@ map_q <- function(pm_data, value, location_data = data_meta,
 }
 ```
 
-```{r saving_fire, eval=FALSE}
-# Saving data sets for fire for ease of loading/practicing viz
-# save(data_meta, file = "data/summer/sep2020_meta.rds")
-# save(data_pm25, file = "data/summer/sep2020_pm25.RData")
-# save(data_hourly, file = "data/summer/sep2020_pm25_hourly.RData")
-# save(data_daily, file = "data/summer/sep2020_pm25_daily.RData")
-
-save(data_pm25, data_meta, data_daily, data_hourly, include_outside, include_inside, file = "data/summer/sep2020.RData")
-
-#save.image(file = "data/summer/sep2020.RData")
-```
-
-```{r loading_fire, eval = FALSE}
-load("data/summer/sep2020.RData")
-```
-
 
 ```{r map_tests, eval = FALSE}
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
@@ -1149,7 +1133,7 @@ map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afterno
       maptype = "terrain", tint = 0.3, tint_color = "white", viridis = "magma")
 ```
 
-```{r}
+```{r, eval=FALSE}
 long_set <- data_hourly %>% 
   pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
                names_to = "corr",
