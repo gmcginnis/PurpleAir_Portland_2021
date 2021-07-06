@@ -149,8 +149,8 @@ input_west <- -122.854
 # Labels of monitors to include. If NULL/unspecified, all monitors will be included.
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Use the following format (capitalization matters):
-#input_labels <- c("se", "SE", "Se", "STAR", "PSU")
-input_labels <- "Eliot Tower"
+input_labels <- c("se", "SE", "Se", "STAR", "PSU")
+#input_labels <- "Eliot Tower"
 
 ## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
 # Run date grouping?
@@ -180,7 +180,8 @@ get_area_pas <- function(state_code = input_stateCode,
   
   setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
   
-  labels_string <- paste0("(",paste(labels, collapse = ")|("), ")")
+  # Stringing the selected labels as one argument to be used as a string
+  labels_string <- paste0("(", paste(labels, collapse = ")|("), ")")
   
   lookback_days <- as.numeric(as.Date(datestamp) - as.Date(startdate)) + 1
   
@@ -193,6 +194,7 @@ get_area_pas <- function(state_code = input_stateCode,
     retries = lookback_days
   )
   
+  # Filtering (or not) filtering by state
   if(is.null(state_code) == TRUE){
     pas_state <- pas
     print("Sensors not filtered for a specified state code.")
@@ -210,7 +212,7 @@ get_area_pas <- function(state_code = input_stateCode,
 pas_area <- get_area_pas()
 ```
 
-```{r}
+```{r cleaning_environment}
 # Cleaning environment
 remove(get_area_pas, input_stateCode, input_north, input_east, input_south, input_west, input_labels)
 ```
@@ -237,17 +239,21 @@ if(include_outside == FALSE & include_inside == FALSE){
   stop(inout_report)
 }
 
+# Message with feedback as to which monitors will be selected
 inout_report
 
+# Warning message if there are many monitors
 if(length(ids) > 100){
   warning("CAUTION: More than 100 monitors selected. Data processing will take significant time. Consider applying more area filters first!")
 }
+# Message returning the number of monitors that will be selected
 print(paste("Number of selected monitors:", length(ids)))
 
+# Cleaning environment
 remove(ids_outside, ids_inside, inout_report)
 ```
 
-```{r iteration,eval=FALSE}
+```{r iteration_old,eval=FALSE}
 # Setup for iteration
 patList <- list()
 idCount <- length(ids)
@@ -371,7 +377,7 @@ raw_data <- data_a %>%
 print(sprintf("Successfully created %d/%d pat objects.", successCount, idCount))
 ```
 
-```{r}
+```{r iteration}
 ## Setup for iteration
 # URL to be used to grab data
 input_baseUrl <- "https://api.thingspeak.com/channels/"
@@ -401,7 +407,6 @@ for (id in ids[1:id_count]) {
   # Message to report progress
   count <- count + 1
   print(sprintf("Working on %s (%d/%d) ...", id, count, id_count))
-  
   print(sprintf("... from %s to %s", date_sequence[1], date_sequence[2]))
   
   # Creating single PAT for first date range
@@ -422,7 +427,7 @@ for (id in ids[1:id_count]) {
     select(intersect(input_cols_to_select, names(.))) %>% 
     mutate("site_id" = id)
   
-  # If there is more than a single pair of dates in the date sequence
+  # If there is more than a single pair of dates in the date sequence, sub-iterations will occur
   if (length(date_sequence) > 2) {
     
     for (i in 2:(length(date_sequence)-1) ) {
@@ -469,7 +474,7 @@ for (id in ids[1:id_count]) {
 # Joining data frames
 raw_data <- full_join(data_a, data_b, # Data sets to join
                       by = c("created_at", "site_id"), # Columns to unite
-                      suffix = c("_A", "_B")) %>% # Adding suffixes for distinct columns
+                      suffix = c("_A", "_B")) %>% # Adding custom suffixes to differentiate the columns
   # Rounding for low time increments, to allow for mostly parallel A & B reports
   mutate(datetime = floor_date(created_at, unit = "2 minutes")) %>% 
   # Grouping for the summarization that will follow
@@ -482,6 +487,12 @@ raw_data <- full_join(data_a, data_b, # Data sets to join
 # Review
 print(sprintf("Successfully created %d/%d pat objects.", length(unique(raw_data$site_id)), id_count))
 ```
+
+```{r clean_env}
+# Already have both saved in raw_data
+remove(data_a, data_b)
+```
+
 
 ```{r timezone_function}
 # Time zones are reported as a variable when downloading the data. Time stamps are reported in UTC. The following will convert the time stamps to said reported time zone.
@@ -517,14 +528,26 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
 
 ```{r qc_function}
 apply_qc <- function(dataset, avg_ab = TRUE){
+  
+  # Creating columns to average A & B data
+  if(avg_ab == TRUE){
+    dataset <- dataset %>% 
+      rowwise() %>% 
+      mutate(
+        pm25_cf1 = mean(c(pm25_cf1_A, pm25_cf1_B), na.rm = TRUE),
+        pm25_atm = mean(c(pm25_atm_A, pm25_atm_B), na.rm = TRUE)
+      ) %>% 
+      ungroup()
+    print("Columns for averages of A & B data added")
+  }
+  
   data_qc <- dataset %>% 
-    # Basic quality control; only possible values are kept
-    # This will also drop missing values
+    # Basic quality control; only physically possible values (and real numbers) are kept
     filter_at(
-      # All columns that start with 'pm25'
+      # Selecting the columns that start with 'pm25'
       vars(starts_with("pm25")),
-      # Filtering such that only values 0:2000 are kept
-      any_vars(between(., 0, 2000))
+      # Filtering said columns such that only values 0:2000 are kept
+      all_vars(between(., 0, 2000))
     ) %>% 
     filter(
       # Filtering temperature for -40:185
@@ -533,23 +556,11 @@ apply_qc <- function(dataset, avg_ab = TRUE){
       between(humidity, 0, 100)
     )
   
-  if(avg_ab == TRUE){
-    data_qc <- data_qc %>% 
-      rowwise() %>% 
-      mutate(
-        #pm25_cf1 = mean(c(pm25_A, pm25_B), na.rm = TRUE),
-        pm25_cf1 = mean(c(pm25_cf1_A, pm25_cf1_B), na.rm = TRUE),
-        pm25_atm = mean(c(pm25_atm_A, pm25_atm_B), na.rm = TRUE)
-      ) %>% 
-      ungroup()
-    print("Columns for averages of A & B data added")
-  }
-  
   return(data_qc)
 }
 ```
 
-```{r qc_sets}
+```{r qc_data_sets}
 # Basic subsetting and quality control
 
 data_meta <- raw_meta %>% 
@@ -562,11 +573,14 @@ data_pm25 <- raw_data %>%
   # Adjusting to be reported time zone (see above function)
   adjust_timezone() %>% 
   # Reordering variables for ease of reading
-  select(site_id, datetime_utc, datetime, date, date_hour, everything())
-
-# Cleaning environment
-#remove(adjust_timezone)
+  select(site_id, datetime, date, date_hour, everything())
 ```
+
+```{r}
+remove(adjust_timezone)
+#remove(adjust_timezone, apply_qc)
+```
+
 
 ```{r applying_epa_corr}
 apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75){
@@ -575,31 +589,32 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
     stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.")
   }
   if(by_day == TRUE & by_hour == FALSE){
-    print("Grouping by date (24 hour averages, by day) [DEFAULT]")
+    print("Grouping by date (24 hour averages, by day) [default]")
     groupings_drop <- vars(site_id, date, date_hour)
     groupings <- vars(site_id, date)
     time_unit <- 24
   }
   if(by_day == TRUE & by_hour == TRUE){
     print("Grouping by date and hour (1 hour averages, by day)")
+    dataset <- dataset %>% 
+      mutate(minute = minute(datetime))
     groupings_drop <- vars(site_id, date, date_hour, minute)
     groupings <- vars(site_id, date, date_hour)
     time_unit <- 60/2
-    dataset <- dataset %>% 
-      mutate(minute = minute(datetime))
   }
   if(by_day == FALSE & by_hour == TRUE){
     print("Grouping by hour (1 hour averages)")
-    groupings_drop <- vars(site_id, hour, minute)
-    groupings <- vars(site_id, hour)
-    time_unit <- 60/2
     dataset <- dataset %>% 
       mutate(
         hour = hour(datetime),
         minute = minute(datetime)
       )
+    groupings_drop <- vars(site_id, hour, minute)
+    groupings <- vars(site_id, hour)
+    time_unit <- 60/2
   }
   
+  # Calculating the minimum number of data points required to be included in the set
   count_to_drop <- ceiling(time_unit*(epa_percent/100))
   
   # Creating a data frame of groups to be removed due to low data quantity
@@ -617,19 +632,20 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
     group_by(site_id, date) %>% 
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
     mutate(
-      # Difference between A&B sensors
+      # Difference between A & B sensors
       diff = pm25_cf1_A-pm25_cf1_B,
-      # Percentage difference between A&B sensors
+      # Percentage difference between A & B sensors
       per_diff = 100*(abs(pm25_cf1_A-pm25_cf1_B))/((pm25_cf1_A+pm25_cf1_B)/2),
       drop = case_when(
-        # We will drop the following based on EPA recommendations
+        # Will drop the following based on EPA recommendations
         abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
-        # Fills all other values (the ones we'll keep) with false
+        # Fills all other values (the ones to be kept) with 'false'
         TRUE ~ FALSE
         )
       ) %>% 
     filter(drop == TRUE) %>% 
     select(site_id, date)
+  
   print("Days (by sensor) to be dropped via an anti-join due to A & B sensor disagreement:")
   print(drop_ab)
   
@@ -653,9 +669,11 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
         pm25_atm >= 50 & pm25_atm < 229 ~ 0.786*pm25_atm - 0.086*humidity + 5.75,
         pm25_atm > 229 ~ 0.69*pm25_atm + (8.84*10^-4)*(pm25_atm^2) + 2.97
       )
-      ) %>% 
-    # Dropping negative values
-    filter_at(vars(epa_2020, epa_2021, epa_atm), all_vars(. >= 0))
+    ) %>% 
+    # Setting negative values to NA
+    mutate_at(vars(epa_2020, epa_2021, epa_atm), ~replace(., which(.<0), NA))
+    # # Dropping negative values
+    # filter_at(vars(epa_2020, epa_2021, epa_atm), all_vars(. >= 0))
 }
 ```
 
@@ -687,8 +705,10 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE){
     mutate(
       lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
       ) %>% 
-    # Dropping negative values
-    filter(lrapa >= 0)
+    # Setting negative values to NA
+    mutate_at(vars(lrapa), ~replace(., which(.<0), NA))
+    # # Dropping negative values
+    # filter(lrapa >= 0)
 }
 ```
 
@@ -696,16 +716,17 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE){
 apply_corrections <- function(data, daily, hourly, epa = 75){
   epa <- data %>% 
     apply_epa(by_day = daily, by_hour = hourly, epa_percent = epa)
+  print("EPA corrections applied")
   
   lrapa <- data %>% 
     apply_lrapa(by_day = daily, by_hour = hourly)
+  print("LRAPA corrections applied")
   
-  epa %>% 
+  df_corr <- epa %>% 
     full_join(lrapa)
+  print("Data frame of corrected values created")
+  return(df_corr)
 }
-
-# data_daily <- apply_corrections(data_pm25, daily = TRUE, hourly = FALSE)
-# data_hourly <- apply_corrections(data_pm25, daily = TRUE, hourly = TRUE)
 ```
 
 
@@ -823,18 +844,6 @@ apply_date_tags <- function(dataset,
     left_join(data_temp) %>% 
     drop_na(date_tag)
 }
-
-# if(run_date_grouping == TRUE){
-#   data_hourly <- apply_date_tags(data_hourly)
-#   data_daily <- apply_date_tags(data_daily)
-#   print("Data now grouped by provided date groupings.")
-#   remove(input_date_starts, input_date_ends, input_date_tags)
-# } else {
-#   print("Date groups not applied.")
-# }
-
-# Cleaning environment
-# remove(run_date_grouping)
 ```
 
 ```{r apply_hour_tags}
@@ -877,7 +886,12 @@ applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run
   
   # Tagging by date
   if(tag_dates == TRUE & group_day == TRUE){
+    # tagged_days <- dataframe %>% 
+    #   apply_date_tags() %>% 
+    #   select(date, date_tag)
     tagged_days <- dataframe %>% 
+      select(date) %>% 
+      distinct() %>% 
       apply_date_tags() %>% 
       select(date, date_tag)
     
@@ -889,10 +903,15 @@ applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run
   
   # Tagging by hour
   if(group_hour == TRUE & tag_hours == TRUE){
+    # tagged_hours <- dataframe %>% 
+    #   apply_hour_tags() %>% 
+    #   select(hour, hour_tag)
     tagged_hours <- dataframe %>% 
+      select(date_hour) %>% 
+      distinct() %>% 
       apply_hour_tags() %>% 
-      select(hour, hour_tag)
-    print("Data now tagged by provided hour groupings.")
+      select(hour, hour_tag) %>% 
+      distinct()
     
     if("hour" %in% colnames(new_df) == FALSE){
       new_df <- new_df %>% 
@@ -900,6 +919,7 @@ applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run
     }
     
     new_df <- new_df %>% left_join(tagged_hours)
+    print("Data now tagged by provided hour groupings.")
     
   } else {
     print("Hour groups not applied.")
@@ -910,7 +930,14 @@ applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run
 }
 ```
 
-```{r}
+```{r auto_apply}
+data_hourly <- applying_functions(data_pm25, group_day = TRUE, group_hour = TRUE)
+data_daily <- applying_functions(data_pm25, group_day = TRUE, group_hour = FALSE)
+data_diurnal <- applying_functions(data_pm25, group_day = FALSE, group_hour = TRUE)
+```
+
+
+```{r manual_apply, eval=FALSE}
 data_daily <- data_pm25 %>% 
   apply_corrections(daily = TRUE, hourly = FALSE) %>% 
   apply_date_tags()
@@ -1124,7 +1151,6 @@ map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afterno
 
 ```{r}
 long_set <- data_hourly %>% 
-  #pivot_longer(cols = c(pm25_cf1, pm25_atm, epa_2020, epa_2021, epa_atm, lrapa)) %>% 
   pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
                names_to = "corr",
                values_to = "pm25") %>% 
@@ -1148,11 +1174,23 @@ long_set %>%
 long_set %>% 
   #ggplot(aes(source, value, color = name)) +
   ggplot(aes(corr, pm25, color = source)) +
-  facet_wrap(~date_tag, scales = "free") +
+  #facet_wrap(~date_tag, scales = "free") +
+  facet_wrap(~hour_tag, scales = "free") +
   #facet_wrap(~date_tag) +
   geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), linetype = "dotted") +
   geom_violin(draw_quantiles = 0.5, fill = "transparent") +
   stat_summary(fun.y = mean, geom ="point", color = "red") +
   theme(legend.position = "bottom")
+
+long_set %>% 
+  select(!c(pm25_cf1_A,pm25_cf1_B,pm25_atm_A,pm25_atm_B)) %>% 
+  mutate(wday = lubridate::wday(date,label=TRUE)) %>% 
+  #group_by(site_id, hour, wday, corr, source) %>% 
+  group_by(hour, wday, corr, source) %>% 
+  summarize_if(is.numeric, mean, na.rm=TRUE) %>% 
+  ggplot(aes(x=hour, y=pm25, color=corr)) +
+  facet_grid(source~wday, scales="free_y") +
+  geom_line() +
+  theme(legend.position="bottom")
 ```
 

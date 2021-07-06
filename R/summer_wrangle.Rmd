@@ -21,7 +21,7 @@ input_path <- "data/raw"
 
 # Choose to load primary and/or secondary data. At least one must be TRUE
 input_read_primary <- TRUE
-input_read_secondary <- FALSE
+input_read_secondary <- TRUE
 
 #OPTIONAL: filter for specific locations, e.g. for STAR labs use "*STAR*" exactly. Use NULL otherwise
 input_path_filter <- "PSU STAR LAB SEL"
@@ -75,7 +75,7 @@ file_list <- list.files(path = input_path,
 
 ```{r location_index}
 # Input: list of files in path
-# Output: data frame with sensor tag, latitude, longitude, inside/outside
+# Output: data frame with sensor tag, latitude, longitude, inside/outside, timezone
 data_loc <- data.frame(source = file_list) %>% 
   mutate(
     loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
@@ -100,14 +100,18 @@ data_loc <- data.frame(source = file_list) %>%
     "latitude" = lat,
     "DEVICE_LOCATIONTYPE" = loc_inout
   ) %>% 
-  mutate(site_id = label)
+  mutate(
+    site_id = label,
+    timezone = input_timezone
+  )
 ```
 
 ```{r cleaning_function}
 # Function purpose: read specific file by location, skipping columns as needed; extracting info from title
 # Input: One file path
 # Output: Data frame of input file with relevant info in columns
-clean_data <- function(input_file, renames = input_renames, selects = input_selects, skips = input_skips, time_zone = input_timezone){
+clean_data <- function(input_file, renames = input_renames, selects = input_selects, skips = input_skips){
+#clean_data <- function(input_file, renames = input_renames, selects = input_selects, skips = input_skips, time_zone = input_timezone){
   fread(input_file,
         sep = ",",
         #drop = input_skips,
@@ -115,13 +119,14 @@ clean_data <- function(input_file, renames = input_renames, selects = input_sele
     select(!intersect(all_of(skips), names(.))) %>% 
     plyr::rename(warn_missing = FALSE, renames) %>% 
     select(created_at, intersect(all_of(selects), names(.))) %>%
-    mutate(
-      datetime_utc = as.POSIXct(created_at, tzone = "UTC"),
-      datetime_tz = lubridate::with_tz(datetime_utc, tzone = time_zone),
-      # 2 minute intervals are used when averaging A&B sensor data if unaveraged data is used
-      datetime = floor_date(datetime_tz, unit = "2 minutes")
-      #datetime = lubridate::with_tz(datetime_utc, "Etc/GMT+8")
-    ) %>% 
+    mutate(datetime = as.POSIXct(created_at, tz = "UTC")) %>% 
+    # mutate(
+    #   datetime_utc = as.POSIXct(created_at, tzone = "UTC"),
+    #   datetime_tz = lubridate::with_tz(datetime_utc, tzone = time_zone),
+    #   # 2 minute intervals are used when averaging A&B sensor data if unaveraged data is used
+    #   datetime = floor_date(datetime_tz, unit = "2 minutes")
+    #   #datetime = lubridate::with_tz(datetime_utc, "Etc/GMT+8")
+    # ) %>% 
     select(!created_at) %>% 
     mutate(
       source = input_file,
@@ -215,14 +220,22 @@ cols_to_pivot <- data_pa_raw %>%
   names()
 
 data_pa <- data_pa_raw %>% 
-  group_by(site_id, datetime) %>% 
   pivot_wider(names_from = loc_ab, values_from = all_of(cols_to_pivot)) %>% 
+  mutate(datetime = floor_date(datetime, unit = "2 minutes")) %>% 
   group_by(site_id, datetime) %>% 
   summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
-  apply_qc()
+  apply_qc() %>% 
+  adjust_timezone(location_data = data_loc) %>% 
+  select(site_id, datetime, date, date_hour, everything())
 ```
 
-```{r corrections}
+```{r auto_apply}
+data_pa_hourly <- applying_functions(data_pa, group_day = TRUE, group_hour = TRUE)
+data_pa_daily <- applying_functions(data_pa, group_day = TRUE, group_hour = FALSE)
+data_pa_diurnal <- applying_functions(data_pa, group_day = FALSE, group_hour = TRUE)
+```
+
+```{r manual_apply, eval=FALSE}
 data_pa_hourly <- data_pa %>% 
   apply_corrections(daily = TRUE, hourly = TRUE) %>% 
   apply_hour_tags() %>% 
@@ -235,8 +248,63 @@ data_pa_daily <- data_pa %>%
 
 ```{r mapping_test, eval=FALSE}
 data_pa_hourly %>%
-  rename(site_id = label) %>%
-  map_q(value = pm25_atm, location_data = (data_loc %>% rename(site_id = label)), grouping_var = hour_tag)
+  map_q(value = pm25_atm, location_data = data_loc, grouping_var = hour_tag)
+
+long_set <- data_pa_hourly %>% 
+  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+               names_to = "corr",
+               values_to = "pm25") %>% 
+  mutate(
+    corr = fct_inorder(corr),
+    source = fct_collapse(corr,
+      PA = c("pm25_cf1", "pm25_atm"),
+      EPA = c("epa_2020", "epa_2021", "epa_atm"),
+      LRAPA = "lrapa"
+    )
+  )
+
+long_set %>% 
+  drop_na(date_tag) %>% 
+  ggplot(aes(date_hour, pm25, color = corr, linetype = source)) +
+  facet_grid(cols=vars(date_tag), scales="free") +
+  geom_line() +
+  theme(legend.position = "bottom")
+  
+
+  
+long_set %>% 
+  drop_na(date_tag) %>% 
+  #ggplot(aes(source, value, color = name)) +
+  ggplot(aes(corr, pm25, color = source)) +
+  #facet_wrap(~date_tag, scales = "free") +
+  facet_grid(cols=vars(date_tag), scales="free") +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), linetype = "dotted") +
+  geom_violin(draw_quantiles = 0.5, fill = "transparent") +
+  stat_summary(fun.y = mean, geom ="point", color = "red") +
+  theme(legend.position = "bottom")
+
+long_set %>% 
+  filter(str_detect(date_tag, "Before|After")) %>% 
+  mutate(wday = lubridate::wday(date, label=TRUE),
+         blah=hms(format(date_hour, format="%H:%M:%S"))) %>% 
+  select(date_hour, blah, wday, hour, hour_tag, corr, pm25, source) %>% 
+  ggplot(aes(x=blah, y=pm25, color=corr)) +
+  scale_x_time() +
+  facet_grid(cols=vars(wday), rows=vars(source)) +
+  geom_line()
+
+data_pa_hourly %>% 
+  drop_na(date_tag) %>% 
+  #filter(str_detect(date_tag, "Before")) %>% 
+  #filter(str_detect(date_tag, "Before|After")) %>% 
+  mutate(wday=lubridate::wday(date,label=TRUE)) %>% 
+  group_by(site_id,date_tag,hour,wday) %>% 
+  summarize_if(is.numeric, mean, na.rm=TRUE) %>% 
+  ggplot(aes(x = hour, y = epa_2021,color=date_tag)) +
+  #facet_grid(cols = vars(wday)) +
+  facet_grid(date_tag~wday, scales="free_y") +
+  geom_line() +
+  theme(legend.position="bottom")
 ```
 
 
