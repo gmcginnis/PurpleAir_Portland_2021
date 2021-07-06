@@ -13,31 +13,33 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(lubridate)
 library(ggmap)
+library(leaflet)
+library(viridis)
 ```
 
 ```{r inputs}
-#file_data_folder <- "Data34_210701_15h04m"
-file_data_folder <- "DST-BC-TEST-DATA-1July2021"
+file_data_folder <- "DST-BC-test-data-1July2021"
 
-# Use a valid Olson name (OlsonNames())
+# Use a valid Olson name; see options with OlsonNames()
 # Reported TZ for the data can be found in the settings file
 time_zone <- "America/Los_Angeles"
 
 # Column names
 # This can be set to NULL if the settings file is in the folder of data
+#col_names <- NULL
 col_names <- c("TS", "Iref", "Isig", "ATN", "BC", "RH", "T", "FR", "Vbat", "GPSlat", "GPSlong")
 ```
 
 ```{r loading_data}
+# folder where folders of BC data are stored
 file_folder <- "data/black_carbon"
-file_path <- file.path(file_folder, file_data_folder)
-
-
-file_list <- list.files(path = file_path)
-
+# list of files in the folders of interest
+file_list <- list.files(path = file.path(file_folder, file_data_folder))
+# list of data files
 file_data <- str_subset(file_list, "^Data")
 
 if(is.null(col_names) == TRUE){
+  # settings file
   file_settings <- str_subset(file_list, "^Settings")
 
   # A wonky way of extracting column name information
@@ -49,23 +51,32 @@ if(is.null(col_names) == TRUE){
     str_replace_all(",", "")
 }
 
-data_raw <- read_csv(file.path(file_folder, file_data_folder, file_data),
+raw_bc_data <- data.frame()
+# iterating for instances where multiple data files exist in one folder
+for(i in file_data){
+  data_temp <- read_csv(file.path(file_folder, file_data_folder, i),
                      col_names = col_names) %>% 
-  mutate(TS = as.POSIXct(str_replace(TS, "\\$", ""), tz = time_zone))
+    mutate(TS = as.POSIXct(str_replace(TS, "\\$", ""), tz = time_zone))
+  
+  raw_bc_data <- rbind(raw_bc_data, data_temp)
+  remove(data_temp)
+}
 ```
 
 ```{r clean_environment}
-remove(time_zone, col_names, list = ls(pattern = "file_"))
+remove(time_zone, col_names, i, list = ls(pattern = "file_"))
 ```
 
-```{r tagging_data}
-data_tagged <- data_raw %>% 
+```{r commute_tags, eval=FALSE}
+# used for file_data_folder <- "DST-BC-test-data-1July2021"
+
+data_bc <- raw_bc_data %>% 
   mutate(
     hour = hour(TS),
     minute = minute(TS)
   ) %>% 
   mutate(
-    # There are neater ways to do this but for now this works :)
+    # There are more elegant ways to do this but for now it works...
     event = fct_inorder(case_when(
       hour <= 16 | (hour == 17 & minute < 15) ~ "office",
       hour == 17 & minute >= 15 & minute < 40 ~ "ladd",
@@ -79,11 +90,87 @@ data_tagged <- data_raw %>%
       "commuting" = c("ladd", "downtown")
     )
   )
+
+# Filtering for reasonable values for mapping
+data_bc_map <- data_bc %>% 
+  filter(
+    between(GPSlat, 40, 50),
+    between(GPSlong, -125, -115),
+    BC >= 0
+  )
 ```
 
+```{r commute_qmap, eval=FALSE}
+# qmplot is the "quick map plot" which will make a static plot that you can add ggplot2 layers to
 
-```{r commute_viz}
-viz_scatter_full <- data_tagged %>% 
+qmplot(
+    data = data_bc_map,
+    # lat and lon must be specified if named unusually (as they are here)
+    x = GPSlong, y = GPSlat,
+    # Setting geom to blank b/c points will be added as a separate layer
+    geom = "blank",
+    ## optional aesthetic arguments:
+    #zoom = 11, # zoom of the map
+    maptype = "toner-lite", # See ?get_map() or http://maps.stamen.com/ for map type options
+    darken = c(0.5, "black") # map tint overlay
+  ) +
+  # Adding the layer of points
+  geom_point(
+    # setting the color of the dots to be based on the value of BC in the data set
+    aes(color = BC),
+    alpha = 0.8, # setting transparency (default=1)
+    size = 1.5 # setting size of the point (default=1)
+  ) +
+  # Setting a custom color scale
+  scale_color_viridis(
+    # view all options on the viridis website
+    option = "turbo",
+    # Manually set scale to start at 0 regardless of the minimum in the data set
+    limits = c(0, NA)
+  ) +
+  # Void theme is good for maps because we don't need lat & long labeled
+  theme_void() +
+  # Setting legend to the bottom
+  theme(legend.position = "bottom")
+```
+
+```{r commute_leaflet, eval=FALSE}
+# leaflet will create an interactive map widget
+# it does not use ggplot2 format
+
+# Creating a color palette
+bc_pal <- colorNumeric(palette = "viridis", domain = data_bc_map$BC)
+
+# (optional) Creating argument for the pop up that will appear when one clicks a point
+# can use HTML arguments for text settings
+bc_popup <- paste0("<b>Timestamp:</b> ", data_bc_map$TS,
+                  "<br><b>BC:</b> ", data_bc_map$BC,
+                  "<br><b>Movement:</b> ", data_bc_map$tag,
+                  " (", data_bc_map$event, ")")
+
+# can set the data frame in the opening argument, or in individual layers
+leaflet(data = data_bc_map) %>% 
+  # Adding tiles (making the map)-- can use addTiles() or provider tiles as below
+  # Preview provider options at https://leaflet-extras.github.io/leaflet-providers/preview/
+  addProviderTiles(providers$CartoDB.DarkMatter) %>% 
+  # Adding points on the map
+  addCircles(
+    # use a tilde when referring to variables in the data set
+    lng = ~GPSlong,
+    lat = ~GPSlat,
+    # for color, the palette made above acts as a function for the specified variable
+    color = ~bc_pal(BC),
+    # What will display when the point is hovered over:
+    label = ~as.character(BC),
+    # What will display when the point is clicked:
+    popup = bc_popup
+  )
+```
+
+```{r commute_viz, eval=FALSE}
+# used for file_data_folder <- "DST-BC-test-data-1July2021"
+
+viz_scatter_full <- data_bc %>% 
   filter(BC >= 0) %>% 
   ggplot(aes(TS, BC)) +
   geom_point(alpha = 0.3, aes(color = event, shape = tag)) +
@@ -108,7 +195,7 @@ viz_scatter_full +
     subtitle = "BC < 0 removed"
   )
 
-viz_scatter_min <- data_tagged %>% 
+viz_scatter_min <- data_bc %>% 
   filter(BC >= 0) %>% 
   mutate(TS = round_date(TS, unit = "minute")) %>% 
   group_by(TS, event, tag) %>% 
@@ -135,7 +222,7 @@ viz_scatter_min +
     subtitle = "BC < 0 removed"
   )
 
-viz_boxplot <- data_tagged %>% 
+viz_boxplot <- data_bc %>% 
   filter(BC >= 0) %>% 
   ggplot(aes(event, BC, color = tag)) +
   geom_jitter(alpha = 0.1, color = "black", shape = 1) +
@@ -158,3 +245,59 @@ viz_boxplot +
 
 ```
 
+```{r static_viz, eval=FALSE}
+# Used for file_data_folder <- "Data34_210702_10h59m"
+# Sensor used: Eliot Tower
+hourly_long <- data_hourly %>% 
+  ungroup() %>% 
+  select(!c(date, minute, hour, hour_tag,
+            temperature, humidity, pm25_cf1_A, pm25_cf1_B, pm25_atm_A, pm25_atm_B, site_id)) %>% 
+  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+               names_to = "corr",
+               values_to = "value") %>% 
+  mutate(
+    corr = fct_inorder(corr),
+    source = fct_collapse(corr,
+      PA = c("pm25_cf1", "pm25_atm"),
+      EPA = c("epa_2020", "epa_2021", "epa_atm"),
+      LRAPA = "lrapa"
+    )
+  ) %>% 
+  rename(datetime = date_hour) %>% 
+  filter(between(datetime, min(raw_bc_data$TS), max(raw_bc_data$TS)))
+
+data_bc_filtered <- raw_bc_data %>% 
+  filter(BC >= 0) %>% 
+  mutate(TS = floor_date(TS, unit = "minute")) %>% 
+  group_by(TS) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+  slice(3:n()) %>% 
+  select(TS, BC) %>% 
+  rename("value" = "BC", "datetime" = "TS") %>% 
+  mutate(corr = "BC", pollutant = "BC")
+
+data_bc_filtered %>% 
+  mutate(source = "BC") %>% 
+  full_join(hourly_long) %>% 
+  ggplot(aes(datetime, value, color = corr)) +
+  facet_grid(rows = vars(source), scales = "free_y") +
+  geom_point(shape = 1, alpha = 0.3) +
+  geom_line() +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+data_pm25_long <- data_pm25 %>% 
+  select(datetime, pm25_cf1, pm25_atm) %>% 
+  filter(between(datetime, min(raw_bc_data$TS), max(raw_bc_data$TS))) %>% 
+  pivot_longer(cols=c(pm25_cf1,pm25_atm), names_to="corr") %>% 
+  mutate(pollutant = "PM")
+
+data_bc_filtered %>% 
+  full_join(data_pm25_long) %>% 
+  ggplot(aes(datetime, value, color = pollutant)) +
+  facet_grid(rows = vars(corr), scales="free_y") +
+  geom_point(shape = 1, alpha = 0.3) +
+  geom_line() +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```

@@ -126,8 +126,8 @@ input_hour_starts <- c(5, 12, 17, 21)
 
 ```{r inputs_recent, eval=FALSE}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
-input_startdate <- "2021-06-01"
-input_enddate <- "2021-06-30"
+input_startdate <- "2021-07-01"
+input_enddate <- "2021-07-05"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
 # Grab data for outdoor sensors?
@@ -150,7 +150,7 @@ input_west <- -122.854
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Use the following format (capitalization matters):
 #input_labels <- c("se", "SE", "Se", "STAR", "PSU")
-input_labels <- NULL
+input_labels <- "Eliot Tower"
 
 ## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
 # Run date grouping?
@@ -164,7 +164,7 @@ input_date_ends <- c("2020-07-03", "2020-07-05", "2020-07-08")
 
 ## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
 # Run hour grouping?
-run_hour_grouping <- FALSE
+run_hour_grouping <- TRUE
 # Hour grouping categories:
 input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
 # Start hours (in a list, using full hours in 24 hour format)
@@ -303,7 +303,7 @@ raw_data <- patList_transposed[[2]]
 remove(patList_transposed)
 ```
 
-```{r imrpoved_loading}
+```{r imrpoved_loading, eval=FALSE}
 # Setup for iteration
 idCount <- length(ids)
 count <- 0 
@@ -472,8 +472,12 @@ raw_data <- full_join(data_a, data_b, # Data sets to join
                       suffix = c("_A", "_B")) %>% # Adding suffixes for distinct columns
   # Rounding for low time increments, to allow for mostly parallel A & B reports
   mutate(datetime = floor_date(created_at, unit = "2 minutes")) %>% 
+  # Grouping for the summarization that will follow
   group_by(site_id, datetime) %>% 
-  summarize_if(is.numeric, mean, na.rm = TRUE)
+  # Summarizing all numeric columns. Removing NAs prevents values being removed for having an NA in the group
+  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+  # Removing periods from column headers
+  rename_with(~gsub("\\.", "", .x))
 
 # Review
 print(sprintf("Successfully created %d/%d pat objects.", length(unique(raw_data$site_id)), id_count))
@@ -553,8 +557,6 @@ data_meta <- raw_meta %>%
   select(site_id, DEVICE_LOCATIONTYPE, label, longitude, latitude, timezone)
 
 data_pm25 <- raw_data %>% 
-  # Selecting only variables of interest, to save on storage
-  #select(site_id, datetime, temperature, humidity, pm25_cf1_A, pm25_cf1_B, pm25_atm_A, pm25_atm_B) %>% 
   # Applying quality control (see above function)
   apply_qc() %>% 
   # Adjusting to be reported time zone (see above function)
@@ -906,15 +908,6 @@ applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run
   # Returning the adjusted dataframe
   return(new_df)
 }
-
-data_pm25 %>% 
-  applying_functions(group_day = FALSE, group_hour = TRUE)
-
-data_pm25 %>% 
-  applying_functions(group_day = TRUE, group_hour = FALSE)
-
-data_pm25 %>% 
-  applying_functions(group_day = TRUE, group_hour = FALSE)
 ```
 
 ```{r}
@@ -949,17 +942,25 @@ map_q <- function(pm_data, value, location_data = data_meta,
   # Warning message and halting execution if required input is missing.
   if(missing(value) == TRUE) stop ("ERROR in argument 'value': Missing input, with no default. Execution haulted. Please input a valid PM2.5 variable (e.g. epa_2021).")
   
+  # Warning message and halting execution if inputeded data does not have more than one unique site_id (map will bug)
+  if(length(unique(pm_data$site_id)) == 1) stop("ERROR: Insufficient data to create a map. Provide a data set with more than one site.")
+  
   input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
   
   # Wrangling based on provided inputs
   data_temp <- pm_data %>% 
     ungroup() %>% 
+    # Grouping by provided variables, as well as site_id
     group_by_at(vars(site_id, {{grouping_var}}, {{grouping_var_2}})) %>% 
+    # Calculating means by said grouping variables
     summarize(mean = mean({{value}}, na.rm = TRUE)) %>% 
     drop_na(mean) %>% 
+    # Adding location data to get lat & lon
     left_join(location_data) %>% 
+    # Selecting desired labels, if provided
     filter(str_detect(label, input_labels))
   
+  # Feedback message
   print("Data now grouped and averaged. Location data added.")
   
   # Custom filtering: exclusions for input categories
@@ -984,13 +985,13 @@ map_q <- function(pm_data, value, location_data = data_meta,
   if(outside == FALSE){
     data_temp <- data_temp %>% 
       filter(DEVICE_LOCATIONTYPE != "outside")
-    print("Excluded outdoor data")
+    print("Outdoor data excluded")
     shapes_inout <- c("inside" = 23)
   }
   if(inside == FALSE){
     data_temp <- data_temp %>% 
       filter(DEVICE_LOCATIONTYPE != "inside")
-    print("Excluded indoor data")
+    print("Indoor data excluded")
     shapes_inout <- c("outside" = 21)
   }
   
@@ -1031,6 +1032,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
       caption = "Data not grouped."
     )
   
+  # Feedback message
   print("Base plot created.")
   
   ## Faceting by grouping variable(s) and applying an appropriate caption to reflect the grouping
@@ -1046,6 +1048,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
           (colnames(pm_data %>% select({{grouping_var}})))[1]
         )
       )
+    # Feedback message
     print(paste("Plot now faceted by", deparse(substitute(grouping_var))))
   }
   # Facet grid if 2 grouping variables provided
@@ -1067,6 +1070,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
           deparse(substitute(grouping_var_2))
           )
       )
+    # Feedback message
     print(paste("Plot now faceted by",
                 deparse(substitute(grouping_var)),
                 "and",
@@ -1116,5 +1120,39 @@ map_q(data_daily, value = lrapa, grouping_var = date_tag, exclude = "Fire")
 
 map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
       maptype = "terrain", tint = 0.3, tint_color = "white", viridis = "magma")
+```
+
+```{r}
+long_set <- data_hourly %>% 
+  #pivot_longer(cols = c(pm25_cf1, pm25_atm, epa_2020, epa_2021, epa_atm, lrapa)) %>% 
+  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+               names_to = "corr",
+               values_to = "pm25") %>% 
+  mutate(
+    corr = fct_inorder(corr),
+    source = fct_collapse(corr,
+      PA = c("pm25_cf1", "pm25_atm"),
+      EPA = c("epa_2020", "epa_2021", "epa_atm"),
+      LRAPA = "lrapa"
+    )
+  )
+
+long_set %>% 
+  ggplot(aes(date_hour, pm25, color = corr)) +
+  facet_wrap(~date_tag, scales = "free") +
+  geom_point(alpha = 0.1, shape = 1) +
+  stat_smooth() +
+  #geom_line()
+  theme(legend.position = "bottom")
+
+long_set %>% 
+  #ggplot(aes(source, value, color = name)) +
+  ggplot(aes(corr, pm25, color = source)) +
+  facet_wrap(~date_tag, scales = "free") +
+  #facet_wrap(~date_tag) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), linetype = "dotted") +
+  geom_violin(draw_quantiles = 0.5, fill = "transparent") +
+  stat_summary(fun.y = mean, geom ="point", color = "red") +
+  theme(legend.position = "bottom")
 ```
 
