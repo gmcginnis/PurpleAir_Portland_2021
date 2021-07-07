@@ -1,0 +1,155 @@
+---
+title: "sparklines"
+author: "Gillian McGinnis"
+date: "7/6/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+single_site <- data_hourly %>%
+  filter(site_id == "48618823101ce928_2045") %>% 
+  select(!c(pm25_cf1_A, pm25_cf1_B, pm25_atm_A, pm25_atm_B, minute)) %>% 
+  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+               names_to = "corr",
+               values_to = "pm25") %>% 
+  mutate(
+    corr = fct_inorder(corr),
+    source = fct_collapse(corr,
+      PA = c("pm25_cf1", "pm25_atm"),
+      EPA = c("epa_2020", "epa_2021", "epa_atm"),
+      LRAPA = "lrapa"
+    )
+  )
+
+
+single_site %>% 
+  ggplot(aes(x = date_hour, y = pm25, color = corr)) +
+  facet_grid(source~., scales="free_y") +
+  geom_line() +
+  theme(legend.position="bottom")
+
+data_diurnal %>% 
+  drop_na(epa_2021) %>% 
+  #filter(site_id %in% c("48618823101ce928_2045", "a20209a9fb613315_3775", "a0f18656133e64ce_2055")) %>% 
+  ggplot(aes(x=hour, y=epa_2021, group=site_id)) +
+  geom_path(alpha=0.5) +
+  geom_point(shape=1, alpha=0.3)
+
+data_daily %>% 
+  ggplot(aes(x = date, y = epa_2021, group = site_id)) +
+  geom_path(alpha=0.5) +
+  geom_point(shape = 1, alpha = 0.3)
+
+data_hourly %>% 
+  ggplot(aes(x = date_hour, y = epa_2021, group = site_id)) +
+  facet_grid(.~date_tag, scales="free") +
+  geom_boxplot()
+  #geom_point(shape = 1, alpha = 0.5)
+
+single_site %>% 
+  filter(corr == "epa_2021") %>% 
+  ggplot(aes(x=date,y=hour, fill = pm25)) +
+  geom_tile() +
+  scale_fill_viridis(name = "Hrly PM25", option = "plasma") +
+  facet_grid(.~date_tag, scale="free_x") +
+  scale_y_continuous(trans = "reverse", breaks = unique(single_site$hour)) +
+  theme_minimal(base_size=8) +
+  theme(legend.position="bottom",
+        plot.title=element_text(size=14, hjust = 0),
+        axis.text.y=element_text(size=6),
+        strip.background = element_rect(colour="white"),
+        axis.ticks=element_blank(),
+        axis.text=element_text(size=7),
+        legend.title=element_text(size=8),
+        legend.text=element_text(size=6),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+single_site %>% 
+  filter(corr=="epa_2021") %>% 
+  ggplot(aes(x = date, y = hour, fill = pm25, label = as.character(round(pm25, digits=2)))) +
+  geom_tile() +
+  geom_text() +
+  scale_fill_viridis(option = "plasma", limits = c(0, NA)) +
+  scale_y_continuous(trans = "reverse", breaks = 0:23)
+
+single_site %>% 
+  filter(corr=="epa_2021") %>% 
+  ggplot(aes(x=hour, y=pm25, color=as.character(date))) +
+  geom_line() +
+  theme(legend.position="bottom")
+
+```
+
+```{r}
+library(leaflet)
+
+site_handful <- data_hourly %>% 
+  filter(site_id %in% c("a20209a9fb613315_3775", "48618823101ce928_2045", "a0f18656133e64ce_2055")) %>% 
+  select(!c(pm25_cf1_A, pm25_cf1_B, pm25_atm_A, pm25_atm_B, minute)) %>% 
+  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+               names_to = "corr",
+               values_to = "pm25") %>% 
+  mutate(
+    corr = fct_inorder(corr),
+    source = fct_collapse(corr,
+      PA = c("pm25_cf1", "pm25_atm"),
+      EPA = c("epa_2020", "epa_2021", "epa_atm"),
+      LRAPA = "lrapa"
+    )
+  ) %>% 
+  left_join(data_meta)
+
+pm_pal <- colorNumeric(palette = "viridis", domain = site_handful$pm25)
+
+leaflet(data=site_handful) %>% 
+  addTiles() %>% 
+  addCircles(
+    data = (site_handful %>% )
+  )
+  addCircles(color = ~pm_pal(pm25)) %>% 
+  addLayersControl(
+    baseGroups = c("Before", "ID", "After")
+  )
+```
+
+```{r}
+data_full <- data_daily %>% 
+  left_join(data_meta) %>% 
+  select(!date_tag) %>% 
+  rename(date_tag = date) %>% 
+  drop_na(epa_2021)
+
+date_tag_list <- as.character(unique(data_full$date_tag))
+map <- leaflet(data_full) %>% 
+  addProviderTiles(providers$CartoDB.DarkMatter)
+pal <- colorNumeric(palette = "viridis", domain = data_full$epa_2021)
+for(date_tag_single in date_tag_list){
+  data_temp <- data_full[data_full$date_tag == date_tag_single,]
+  
+  map <- map %>%
+    addCircleMarkers(
+      data = data_temp,
+      lng = ~longitude,
+      lat = ~latitude,
+      color = ~pal(epa_2021),
+      radius = 5,
+      fillOpacity = 0.5,
+      #radius = ~sqrt(epa_2021),
+      group = date_tag_single,
+      label = ~as.character(round(epa_2021, digits=2))
+    )
+  
+  #remove(data_temp, date_tag_single, date_tag_list)
+}
+map %>%
+  addLayersControl(
+    baseGroups = date_tag_list,
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+
