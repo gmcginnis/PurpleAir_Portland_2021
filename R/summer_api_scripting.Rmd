@@ -9,14 +9,6 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r libraries}
-library(tidyverse)
-library(AirSensor)
-library(lubridate)
-library(ggmap)
-library(viridis)
-```
-
 ```{r, fixing_qmplot, eval=FALSE}
 detach("package:ggmap")
 remove.packages("ggmap")
@@ -27,10 +19,19 @@ devtools::install_github("dkahle/ggmap")
 library(ggmap)
 ```
 
+
+```{r, libraries}
+library(tidyverse)
+library(AirSensor)
+library(lubridate)
+library(ggmap)
+library(viridis)
+```
+
 ```{r, inputs}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
 input_startdate <- "2021-07-01"
-input_enddate <- "2021-07-05"
+input_enddate <- "2021-07-06"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
 # Grab data for outdoor sensors?
@@ -61,9 +62,9 @@ run_date_grouping <- TRUE
 # Date grouping categories:
 input_date_tags <- c("Before", "Independence Day", "After")
 # Start dates (in a list, "YYYY-MM-DD")
-input_date_starts <- c("2021-07-01", "2021-07-04", "2021-07-06")
+input_date_starts <- c("2021-07-01", "2021-07-04", "2021-07-05")
 # End dates (in a list, "YYYY-MM-DD")
-input_date_ends <- c("2021-07-03", "2021-07-05", "2021-07-08")
+input_date_ends <- c("2021-07-03", "2021-07-04", "2021-07-08")
 
 ## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
 # Run hour grouping?
@@ -116,12 +117,12 @@ get_area_pas <- function(state_code = input_stateCode,
 pas_area <- get_area_pas()
 ```
 
-```{r, clean_pas}
+```{r, eclean_pas}
 # Cleaning environment
 remove(get_area_pas, input_stateCode, input_north, input_east, input_south, input_west, input_labels)
 ```
 
-```{r, getting_id}
+```{r, getting_ids}
 ids_outside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = TRUE)
 ids_inside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = FALSE)
 
@@ -156,7 +157,7 @@ print(paste("Number of selected monitors:", length(ids)))
 remove(ids_outside, ids_inside, inout_report)
 ```
 
-```{r, getting_data}
+```{r, getting_pat}
 ## Setup for iteration
 # URL to be used to grab data
 input_baseUrl <- "https://api.thingspeak.com/channels/"
@@ -267,7 +268,7 @@ raw_data <- full_join(data_a, data_b, # Data sets to join
 print(sprintf("Successfully created %d/%d pat objects.", length(unique(raw_data$site_id)), id_count))
 ```
 
-```{r, clean_iteration}
+```{r, eclean_iteration}
 # Already have both saved in raw_data
 remove(data_a, data_b)
 ```
@@ -352,6 +353,10 @@ data_pm25 <- raw_data %>%
   adjust_timezone() %>% 
   # Reordering variables for ease of reading
   select(site_id, datetime, date, date_hour, everything())
+```
+
+```{r, eclean_qc, eval=FALSE}
+remove(apply_qc, adjust_timezone)
 ```
 
 ```{r, function_epa}
@@ -501,7 +506,7 @@ apply_corrections <- function(data, daily, hourly, epa = 75){
 }
 ```
 
-```{r, function_date_tagging}
+```{r, function_tag_dates}
 apply_date_tags <- function(dataset,
                         starts = input_date_starts, ends = input_date_ends, tags = input_date_tags,
                         date_stamp = "17 Jan 1999"){
@@ -529,7 +534,7 @@ apply_date_tags <- function(dataset,
 }
 ```
 
-```{r, function_hour_tagging}
+```{r, function_tag_hours}
 apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_hour_tags){
   tags <- factor(tags)
   
@@ -617,6 +622,10 @@ applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run
 data_hourly <- applying_functions(data_pm25, group_day = TRUE, group_hour = TRUE)
 data_daily <- applying_functions(data_pm25, group_day = TRUE, group_hour = FALSE)
 data_diurnal <- applying_functions(data_pm25, group_day = FALSE, group_hour = TRUE)
+```
+
+```{r, eclean_applying, eval=FALSE}
+remove(apply_corrections, applying_functions, apply_epa, apply_lrapa, apply_hour_tags, apply_date_tags)
 ```
 
 ```{r, function_map}
@@ -781,10 +790,13 @@ map_q <- function(pm_data, value, location_data = data_meta,
 
 ```{r, viz_maps, eval=FALSE}
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
-map_q(data_hourly, value=epa_2021)
-map_q(data_hourly, value = epa_2021, grouping_var = hour_tag, grouping_var_2 = date_tag)
-map_q(data_hourly, value = pm25_cf1, grouping_var = hour_tag, grouping_var_2 = date_tag)
-map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, grouping_var_2 = date_tag)
+
+data_hourly %>% 
+  filter(site_id != "9c83953c1afae9df_86135") %>% 
+  map_q(value = epa_2021, grouping_var = hour, grouping_var_2 = date_tag, inside=FALSE)
+
+data_hourly %>% filter(site_id != "9c83953c1afae9df_86135") %>% 
+  map_q(value=epa_2021, grouping_var = date_tag, inside=FALSE)
 
 data_hourly %>% 
   # filter(site_id != "01cff4b431a1862a_26757",
@@ -843,4 +855,3 @@ long_set %>%
   geom_line() +
   theme(legend.position="bottom")
 ```
-
