@@ -306,7 +306,43 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
 ```
 
 ```{r, hour_testing, eval=FALSE}
-lims <- as.POSIXct(strptime(c("1970-01-01 00:00","1970-01-01 23:00"), format = "%Y-%m-%d %H:%M"))
+#lims <- as.POSIXct(strptime(c("1970-01-01 00:00","1970-01-01 23:00"), format = "%Y-%m-%d %H:%M"))
+starts <- input_hour_starts
+tags <- factor(input_hour_tags)
+
+hours_in_day <- data.frame(starts = 0:23)
+
+new_hour <- data.frame(starts, tags) %>% 
+  mutate(
+    ends = lead(starts - 1),
+    ends = replace_na(ends, starts[1]-1),
+    tags = paste0(tags, "\n(", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
+  ) %>% 
+  arrange(starts) %>% 
+  mutate(hour_tag = fct_inorder(tags)) %>%
+  complete(starts = full_seq(starts, 1)) %>%
+  right_join(hours_in_day) %>%
+  rename(hour = starts) %>%
+  fill(hour_tag) %>%
+  select(!c(tags, ends)) %>% 
+  mutate(hour = hms::as_hms(hour*60*60))
+
+dat %>% left_join(new_hour)
+
+data_temp <- data.frame(starts, tags) %>% 
+  mutate(
+    ends = lead(starts - 1),
+    ends = replace_na(ends, starts[1]-1),
+    tags = paste0(tags, "\n(", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
+  ) %>% 
+  arrange(starts) %>% 
+  mutate(hour_tag = fct_inorder(tags)) %>%
+  complete(starts = full_seq(starts, 1)) %>%
+  right_join(hours_in_day) %>%
+  rename(hour = starts) %>%
+  fill(hour_tag) %>%
+  select(!c(tags, ends))
+
 
 dat <- raw_data %>% 
   filter(site_id==id) %>% 
@@ -315,8 +351,8 @@ dat <- raw_data %>%
     time = hms::as_hms(datetime),
     # sec_round = hms::round_hms(time, 60*60),
     # round = hms::as_hms(round(datetime, units  = "hours")),
-    hour = hms::as_hms(hour(datetime)*60*60),
-    hour = as_datetime(hour)
+    hour = hms::as_hms(hour(datetime)*60*60)
+    # hour = as_datetime(hour)
     #hrrr = hms::round_hms(time, 60*60)
   ) %>% 
   group_by(hour) %>% 
@@ -586,11 +622,20 @@ apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_ho
     right_join(hours_in_day) %>%
     rename(hour = starts) %>%
     fill(hour_tag) %>%
-    select(!c(tags, ends))
+    select(!c(tags, ends))# %>%
+    # HR_CHANGES
+    # mutate(hour = hms::as_hms(hour*60*60))
+  # HR_CHANGES
   
   if("hour" %in% colnames(dataset) == FALSE){
     dataset <- dataset %>% 
       mutate(hour = hour(date_hour))
+    #   # HR_CHANGES
+    #   mutate(
+    #     hour = hour(date_hour),
+    #     hour = hms::as_hms(hour*60*60)
+    #   )
+    # # HR_CHANGES
   }
   
   dataset %>% 
