@@ -811,47 +811,207 @@ map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afterno
       maptype = "terrain", tint = 0.3, tint_color = "white", viridis = "magma")
 ```
 
-```{r, viz_time, eval=FALSE}
-long_set <- data_hourly %>% 
-  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
-               names_to = "corr",
-               values_to = "pm25") %>% 
-  mutate(
-    corr = fct_inorder(corr),
-    source = fct_collapse(corr,
-      PA = c("pm25_cf1", "pm25_atm"),
-      EPA = c("epa_2020", "epa_2021", "epa_atm"),
-      LRAPA = "lrapa"
+```{r viz_heatmap_single}
+heatmap_single <- function(dataset, site_of_interest, variable_of_interest, location_data = data_meta){
+  
+  temp_loc <- location_data %>% 
+    select(site_id, label)
+  
+  temp_df <- dataset %>% 
+    ungroup() %>% 
+    left_join(temp_loc) %>% 
+    filter(str_detect(label, site_of_interest)) %>% 
+    drop_na({{variable_of_interest}}) %>% 
+    distinct()
+  
+  if(length(unique(temp_df$label)) == 0){stop("ERROR: No monitors selected. Please verify a distinct label was provided.")}
+  if(length(unique(temp_df$label)) > 1){
+    print("Matching locations from meta data:")
+    temp_loc %>% filter(str_detect(label, site_of_interest)) %>% distinct() %>% pull(label) %>% print()
+    print("Matching locations that contain values of interest:")
+    temp_df %>% pull(label) %>% unique() %>% print()
+    stop("ERROR: More than one site selected. Please use a more precise string argument. Matching values are listed above.")
+  }
+  
+  
+  lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
+  lab_subtitle <- paste0("Data from PurpleAir. Monitor selected: \"", unique(temp_df$label),
+  #lab_subtitle <- paste0("Data from PurpleAir. Monitor selected: \"", site_of_interest,
+                        "\". Data plotted: ", deparse(substitute(variable_of_interest)))
+  lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  
+  temp_df %>% 
+    ggplot(aes(x = date,
+               y = hour,
+               fill = {{variable_of_interest}},
+               label = as.character(sprintf("%.2f", round({{variable_of_interest}}, digits=2)))
+    )) +
+    geom_tile() +
+    scale_fill_viridis(option = "plasma", limits = c(0, NA)) +
+    geom_text() +
+    scale_y_continuous(trans = "reverse", breaks = 0:23, limits = c(24,-1)) +
+    scale_x_date(breaks = "1 day", date_labels = "%d %b %Y") +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      panel.grid = element_blank(),
+      axis.title.x = element_blank()
+    ) +
+    labs(
+      title = lab_title,
+      subtitle = lab_subtitle,
+      fill = lab_pm,
+      y = "Hour of the day"
     )
+}
+heatmap_single(data_hourly, "Rose City", epa_2021)
+```
+
+```{r viz_heatmap_mass}
+heatmap_cross <- function(dataset, variable_of_interest, location_data = data_meta, digits = 2, filter_max = NA){
+  temp_loc <- location_data %>% 
+    mutate(label = fct_reorder(as.factor(label), desc(latitude))) %>% 
+    select(site_id, label, DEVICE_LOCATIONTYPE)
+  
+  lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
+  lab_subtitle <- paste("Data from PurpleAir. Data plotted:", deparse(substitute(variable_of_interest)))
+  lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  lab_caption <- paste("Maximum value reported:",
+                       round(
+                         max(
+                           dataset[,deparse(substitute(variable_of_interest))],
+                           na.rm=TRUE
+                         ),
+                         digits = 2
+                       ))
+  
+  if(is.na(filter_max) == FALSE){
+    dataset <- dataset %>% 
+      filter({{variable_of_interest}} <= {{filter_max}})
+    
+    lab_caption <- paste("Values manually capped at:", filter_max)
+    
+    print(paste(
+      "Filtered out values greater than",
+      {{filter_max}},
+      "from",
+      deparse(substitute(variable_of_interest))
+    ))
+  }
+  
+  options_expand <- expansion(mult = c(0, 0.05))
+  
+  if("datetime" %in% colnames(dataset) == TRUE){
+    dataset <- dataset %>% rename(timestamp = datetime)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b %Y", expand = options_expand)
+    print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
+  } else if("date_hour" %in% colnames(dataset) == TRUE){
+    dataset <- dataset %>% rename(timestamp = date_hour)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b %Y", expand = options_expand)
+    print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
+  } else if("date" %in% colnames(dataset) == TRUE){
+    dataset <- dataset %>% rename(timestamp = date)
+    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b %Y", expand = options_expand)
+    print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
+  } else if("hour" %in% colnames(dataset) == TRUE){
+    dataset <- dataset %>% mutate(time = hms::as_hms(hour*60*60), timestamp = as_datetime(time))
+    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
+    print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
+  } else {stop("INPUT ERROR: No time-based variables found!")}
+  
+  
+  dataset %>% 
+    drop_na({{variable_of_interest}}) %>% 
+    distinct() %>% 
+    left_join(temp_loc) %>% 
+    ggplot(aes(
+      x = timestamp,
+      y = label,
+      fill = {{variable_of_interest}}
+    )) +
+    facet_grid(DEVICE_LOCATIONTYPE~., scales = "free_y", space = "free_y") +
+    geom_tile() +
+    scale_fill_viridis(option = "plasma", limits = c(0, NA)) +
+    scale_y_discrete(limits = rev) + 
+    ggthemes::theme_few() +
+    theme(
+      # legend.position = c(1, 1.1),
+      # legend.direction = "horizontal",
+      # legend.justification = "right",
+      legend.position = "bottom",
+      panel.grid = element_blank(),
+      panel.border = element_blank(),
+      axis.text.x = element_text(angle = 30, hjust = 1),
+      axis.title = element_blank()
+    ) + 
+    labs(
+      title = lab_title,
+      # subtitle = lab_subtitle,
+      fill = lab_pm,
+      # caption = lab_caption
+      subtitle = paste(lab_subtitle, lab_caption, sep="\n")
+    ) +
+    x_scale
+}
+
+#heatmap_cross(data_pm25, variable_of_interest=pm25_atm, filter_max = 50)
+heatmap_cross(data_hourly, variable_of_interest=epa_2021, filter_max = 50)
+heatmap_cross(data_daily, variable_of_interest=epa_2021, filter_max = 50)
+heatmap_cross(data_diurnal, variable_of_interest=epa_2021, filter_max = 105)
+heatmap_cross(data_diurnal, variable_of_interest=epa_2021)
+```
+
+```{r}
+leveled_meta <- data_meta %>% 
+  mutate(label = fct_reorder(as.factor(label), desc(latitude)))
+  # arrange(desc(latitude)) %>% 
+  # mutate(label = fct_inorder(as.factor(label)))
+
+data_hourly %>% 
+  drop_na(epa_2021) %>%
+  filter(epa_2021 < 30) %>%
+  distinct() %>% 
+  left_join(leveled_meta) %>% 
+  #y = str_wrap(label, width = 30)
+  ggplot(aes(x = date_hour, y = label, fill = epa_2021, label = as.character(sprintf("%.2f", round(epa_2021, digits=2))))) +
+  facet_grid(DEVICE_LOCATIONTYPE~., scales = "free_y", space = "free_y") +
+  geom_tile() +
+  # plasma or mako w direction -1
+  #scale_fill_viridis(option = "mako", direction = -1, limits = c(0, NA)) +
+  scale_fill_viridis(option = "plasma", limits = c(0, NA)) +
+  scale_y_discrete(limits = rev) +
+  #scale_y_discrete(guide=guide_axis(n.dodge=2)) +
+  # scale_y_discrete(breaks = data_meta$label[seq(1, length(data_meta$label), by=2)])
+  scale_x_datetime(
+    breaks = "1 day",
+    date_labels = "%d %b %Y",
+    expand = expansion(mult = c(0, 0.1))
+  ) +
+  ggthemes::theme_few() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    axis.title = element_blank()
   )
 
-long_set %>% 
-  ggplot(aes(date_hour, pm25, color = corr)) +
-  facet_wrap(~date_tag, scales = "free") +
-  geom_point(alpha = 0.1, shape = 1) +
-  stat_smooth() +
-  #geom_line()
-  theme(legend.position = "bottom")
-
-long_set %>% 
-  #ggplot(aes(source, value, color = name)) +
-  ggplot(aes(corr, pm25, color = source)) +
-  #facet_wrap(~date_tag, scales = "free") +
-  facet_wrap(~hour_tag, scales = "free") +
-  #facet_wrap(~date_tag) +
-  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), linetype = "dotted") +
-  geom_violin(draw_quantiles = 0.5, fill = "transparent") +
-  stat_summary(fun.y = mean, geom ="point", color = "red") +
-  theme(legend.position = "bottom")
-
-long_set %>% 
-  select(!c(pm25_cf1_A,pm25_cf1_B,pm25_atm_A,pm25_atm_B)) %>% 
-  mutate(wday = lubridate::wday(date,label=TRUE)) %>% 
-  #group_by(site_id, hour, wday, corr, source) %>% 
-  group_by(hour, wday, corr, source) %>% 
-  summarize_if(is.numeric, mean, na.rm=TRUE) %>% 
-  ggplot(aes(x=hour, y=pm25, color=corr)) +
-  facet_grid(source~wday, scales="free_y") +
-  geom_line() +
-  theme(legend.position="bottom")
+data_hourly %>% 
+  drop_na(epa_2021) %>% 
+  left_join(leveled_meta) %>% 
+  select(label, date_hour, DEVICE_LOCATIONTYPE, epa_2021) %>% 
+  full_join(
+    (data_deq %>%
+       select(date_hour, pm25_deq) %>%
+       mutate(DEVICE_LOCATIONTYPE = "deq", label = "deq") %>%
+       rename(epa_2021=pm25_deq) %>% 
+       filter(date_hour >= min(data_hourly$date_hour),
+              date_hour <= max(data_hourly$date_hour)))
+  ) %>% 
+  mutate(DEVICE_LOCATIONTYPE = factor(DEVICE_LOCATIONTYPE, levels = c("inside", "deq", "outside"))) %>% 
+  ggplot(aes(x = date_hour, y = label, fill = epa_2021)) +
+  facet_grid(DEVICE_LOCATIONTYPE~., scales="free_y", space="free_y") +
+  geom_tile() +
+  scale_fill_viridis(option="plasma", limits=c(0, 50))
 ```
+

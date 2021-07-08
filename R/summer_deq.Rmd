@@ -17,7 +17,7 @@ library(lubridate)
 
 
 ```{r inputs}
-input_deq_path <- "data/deq/Portland SE Lafayette.xlsx"
+input_deq_path <- "data/deq/SEL_july.xlsx"
 
 # Input of renames. Those listed will be included in the final data frame.
 # Time stamp will be automatically renamed and kept.

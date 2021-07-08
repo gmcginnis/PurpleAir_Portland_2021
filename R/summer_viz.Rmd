@@ -39,6 +39,13 @@ data_diurnal %>%
   geom_path(alpha=0.5) +
   geom_point(shape=1, alpha=0.3)
 
+# data_diurnal %>% 
+#   filter(site_id %in% c("48618823101ce928_2045", "a20209a9fb613315_3775", "a0f18656133e64ce_2055")) %>% 
+#   drop_na(epa_2021) %>% 
+#   ggplot(aes(x=hour,y=epa_2021,group=site_id)) +
+#   coord_polar() +
+#   geom_path()
+
 data_daily %>% 
   ggplot(aes(x = date, y = epa_2021, group = site_id)) +
   geom_path(alpha=0.5) +
@@ -50,12 +57,13 @@ data_hourly %>%
   geom_boxplot()
   #geom_point(shape = 1, alpha = 0.5)
 
+
 single_site %>% 
   filter(corr == "epa_2021") %>% 
   ggplot(aes(x=date,y=hour, fill = pm25)) +
   geom_tile() +
   scale_fill_viridis(name = "Hrly PM25", option = "plasma") +
-  facet_grid(.~date_tag, scale="free_x") +
+  facet_grid(.~date_tag, scale="free_x", space="free_x") +
   scale_y_continuous(trans = "reverse", breaks = unique(single_site$hour)) +
   theme_minimal(base_size=8) +
   theme(legend.position="bottom",
@@ -66,15 +74,28 @@ single_site %>%
         axis.text=element_text(size=7),
         legend.title=element_text(size=8),
         legend.text=element_text(size=6),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        #
+        panel.border = element_blank(),
+        #panel.background = element_blank(),
+        #panel.grid = element_blank(),
+        panel.spacing = unit(0,"line")
+        )
 
 single_site %>% 
   filter(corr=="epa_2021") %>% 
-  ggplot(aes(x = date, y = hour, fill = pm25, label = as.character(round(pm25, digits=2)))) +
+  ggplot(aes(x = date, y = hour, fill = pm25, label = as.character(sprintf("%.2f", round(pm25, digits=2))))) +
   geom_tile() +
-  geom_text() +
   scale_fill_viridis(option = "plasma", limits = c(0, NA)) +
-  scale_y_continuous(trans = "reverse", breaks = 0:23)
+  #geom_text(aes(color=round(pm25, digits=2)), show.legend=FALSE) +
+  #scale_color_viridis(option = "plasma", direction = -1, limits = c(0, NA)) +
+  geom_text() +
+  scale_y_continuous(trans = "reverse", breaks = 0:23) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank()
+  )
 
 single_site %>% 
   filter(corr=="epa_2021") %>% 
@@ -83,6 +104,59 @@ single_site %>%
   theme(legend.position="bottom")
 
 ```
+
+```{r}
+tenn <- unique(data_meta$site_id)[1:10]
+
+data_hourly %>% 
+  filter(site_id %in% tenn) %>% 
+  left_join(data_meta) %>% 
+  ggplot(aes(x = date_hour, y = epa_2021)) +
+  facet_grid(label~.) +
+  geom_line()
+
+```
+
+```{r}
+#devtools::install_github("hrbrmstr/streamgraph")
+library(streamgraph)
+
+data_hourly %>% 
+  filter(site_id %in% tenn) %>% 
+  left_join(data_meta) %>% 
+  ungroup() %>% 
+  select(label, epa_2021, date_hour, date) %>% 
+  streamgraph(key="label",value="epa_2021",date="date_hour") %>% 
+  sg_axis_x(1, "date_hour", "%H, %d")
+
+data_daily %>% 
+  filter(site_id %in% tenn) %>% 
+  ungroup() %>% 
+  streamgraph("site_id", "epa_2021", "date") %>% 
+  sg_axis_x(1, "date", "%d")
+```
+
+```{r}
+library(ggridges)
+
+data_hourly %>% 
+  filter(site_id %in% tenn) %>% 
+  ggplot(aes(x = epa_2021, y = site_id, fill = ..x..)) +
+  geom_density_ridges_gradient()+
+  scale_fill_viridis(option="C")
+```
+
+```{r}
+single_site %>%
+  distinct() %>% 
+  ggplot(aes(x = date_hour, y = pm25, color = corr, linetype=source, fill=corr)) +
+  #geom_area(alpha=0.4)
+  geom_line() +
+  geom_point()
+```
+
+
+
 
 ```{r}
 library(leaflet)
@@ -107,9 +181,9 @@ pm_pal <- colorNumeric(palette = "viridis", domain = site_handful$pm25)
 
 leaflet(data=site_handful) %>% 
   addTiles() %>% 
-  addCircles(
-    data = (site_handful %>% )
-  )
+  # addCircles(
+  #   data = (site_handful %>% )
+  # )
   addCircles(color = ~pm_pal(pm25)) %>% 
   addLayersControl(
     baseGroups = c("Before", "ID", "After")
@@ -153,3 +227,49 @@ map %>%
 ```
 
 
+
+
+```{r, viz_time, eval=FALSE}
+long_set <- data_hourly %>% 
+  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+               names_to = "corr",
+               values_to = "pm25") %>% 
+  mutate(
+    corr = fct_inorder(corr),
+    source = fct_collapse(corr,
+      PA = c("pm25_cf1", "pm25_atm"),
+      EPA = c("epa_2020", "epa_2021", "epa_atm"),
+      LRAPA = "lrapa"
+    )
+  )
+
+long_set %>% 
+  ggplot(aes(date_hour, pm25, color = corr)) +
+  facet_wrap(~date_tag, scales = "free") +
+  geom_point(alpha = 0.1, shape = 1) +
+  stat_smooth() +
+  #geom_line()
+  theme(legend.position = "bottom")
+
+long_set %>% 
+  #ggplot(aes(source, value, color = name)) +
+  ggplot(aes(corr, pm25, color = source)) +
+  #facet_wrap(~date_tag, scales = "free") +
+  facet_wrap(~hour_tag, scales = "free") +
+  #facet_wrap(~date_tag) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), linetype = "dotted") +
+  geom_violin(draw_quantiles = 0.5, fill = "transparent") +
+  stat_summary(fun.y = mean, geom ="point", color = "red") +
+  theme(legend.position = "bottom")
+
+long_set %>% 
+  select(!c(pm25_cf1_A,pm25_cf1_B,pm25_atm_A,pm25_atm_B)) %>% 
+  mutate(wday = lubridate::wday(date,label=TRUE)) %>% 
+  #group_by(site_id, hour, wday, corr, source) %>% 
+  group_by(hour, wday, corr, source) %>% 
+  summarize_if(is.numeric, mean, na.rm=TRUE) %>% 
+  ggplot(aes(x=hour, y=pm25, color=corr)) +
+  facet_grid(source~wday, scales="free_y") +
+  geom_line() +
+  theme(legend.position="bottom")
+```
