@@ -9,7 +9,7 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r, fixing_qmplot, eval=FALSE}
+```{r fixing_qmplot, eval=FALSE}
 detach("package:ggmap")
 remove.packages("ggmap")
 
@@ -20,7 +20,7 @@ library(ggmap)
 ```
 
 
-```{r, libraries}
+```{r libraries}
 library(tidyverse)
 library(AirSensor)
 library(lubridate)
@@ -28,10 +28,10 @@ library(ggmap)
 library(viridis)
 ```
 
-```{r, inputs}
+```{r inputs}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
-input_startdate <- "2021-07-01"
-input_enddate <- "2021-07-06"
+input_startdate <- "2020-07-01"
+input_enddate <- "2020-07-06"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
 # Grab data for outdoor sensors?
@@ -62,9 +62,9 @@ run_date_grouping <- TRUE
 # Date grouping categories:
 input_date_tags <- c("Before", "Independence Day", "After")
 # Start dates (in a list, "YYYY-MM-DD")
-input_date_starts <- c("2021-07-01", "2021-07-04", "2021-07-05")
+input_date_starts <- c("2020-07-01", "2020-07-04", "2020-07-05")
 # End dates (in a list, "YYYY-MM-DD")
-input_date_ends <- c("2021-07-03", "2021-07-04", "2021-07-08")
+input_date_ends <- c("2020-07-03", "2020-07-04", "2020-07-08")
 
 ## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
 # Run hour grouping?
@@ -77,7 +77,7 @@ input_hour_starts <- c(5, 12, 17, 21)
 ```
 
 
-```{r, getting_pas}
+```{r getting_pas}
 get_area_pas <- function(state_code = input_stateCode,
                          west = input_west, east = input_east, south = input_south, north = input_north,
                          labels = input_labels,
@@ -117,12 +117,12 @@ get_area_pas <- function(state_code = input_stateCode,
 pas_area <- get_area_pas()
 ```
 
-```{r, eclean_pas}
+```{r eclean_pas}
 # Cleaning environment
 remove(get_area_pas, input_stateCode, input_north, input_east, input_south, input_west, input_labels)
 ```
 
-```{r, getting_ids}
+```{r getting_ids}
 ids_outside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = TRUE)
 ids_inside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = FALSE)
 
@@ -157,7 +157,7 @@ print(paste("Number of selected monitors:", length(ids)))
 remove(ids_outside, ids_inside, inout_report)
 ```
 
-```{r, getting_pat}
+```{r getting_pat}
 ## Setup for iteration
 # URL to be used to grab data
 input_baseUrl <- "https://api.thingspeak.com/channels/"
@@ -268,12 +268,13 @@ raw_data <- full_join(data_a, data_b, # Data sets to join
 print(sprintf("Successfully created %d/%d pat objects.", length(unique(raw_data$site_id)), id_count))
 ```
 
-```{r, eclean_iteration}
+```{r eclean_iteration}
+remove(count, id, id_count, ids, input_baseUrl, input_cols_to_select, date_sequence)
 # Already have both saved in raw_data
 remove(data_a, data_b)
 ```
 
-```{r, function_tz}
+```{r function_tz}
 # Time zones are reported as a variable when downloading the data. Time stamps are reported in UTC. The following will convert the time stamps to said reported time zone.
 # If more than one time zone is reported in the data, the conversion will use the time zone most frequently used in the data set. This is because no more than one time zone can be applied to a date time variable.
 adjust_timezone <- function(dataset, location_data = raw_meta){
@@ -293,11 +294,19 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
   dataset_new <- dataset %>%
     # Original time stamps (in UTC) will be preserved
     rename(datetime_utc = datetime) %>% 
-    # Creating variables for date and hour
+    # # Creating variables for date and hour
+    # mutate(
+    #   datetime = with_tz(datetime_utc, tzone = timezone),
+    #   date = date(datetime),
+    #   date_hour = floor_date(datetime, unit = "hour")
+    # )
+    # HR_TESTING
     mutate(
       datetime = with_tz(datetime_utc, tzone = timezone),
       date = date(datetime),
-      date_hour = floor_date(datetime, unit = "hour")
+      time = hms::as_hms(datetime),
+      date_hour = floor_date(datetime, unit = "hour"),
+      hour = hms::as_hms(date_hour)
     )
   
   print(paste("Time zone applied:", timezone))
@@ -305,7 +314,7 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
 }
 ```
 
-```{r, hour_testing, eval=FALSE}
+```{r hour_testing, eval=FALSE}
 #lims <- as.POSIXct(strptime(c("1970-01-01 00:00","1970-01-01 23:00"), format = "%Y-%m-%d %H:%M"))
 starts <- input_hour_starts
 tags <- factor(input_hour_tags)
@@ -375,7 +384,7 @@ ggplot(dat, aes(x = hour, y = mean)) +
 ```
 
 
-```{r, function_qc}
+```{r function_qc}
 apply_qc <- function(dataset, avg_ab = TRUE){
   
   # Creating columns to average A & B data
@@ -409,7 +418,7 @@ apply_qc <- function(dataset, avg_ab = TRUE){
 }
 ```
 
-```{r, data_qc}
+```{r data_qc}
 # Basic subsetting and quality control
 
 data_meta <- raw_meta %>% 
@@ -425,11 +434,11 @@ data_pm25 <- raw_data %>%
   select(site_id, datetime, date, date_hour, everything())
 ```
 
-```{r, eclean_qc, eval=FALSE}
+```{r eclean_qc, eval=FALSE}
 remove(apply_qc, adjust_timezone)
 ```
 
-```{r, function_epa}
+```{r function_epa}
 apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75){
   
   if(by_day == FALSE & by_hour == FALSE){
@@ -524,7 +533,7 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
 }
 ```
 
-```{r, function_lrapa}
+```{r function_lrapa}
 apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE){
   
   if(by_day == FALSE & by_hour == FALSE){
@@ -559,7 +568,7 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE){
 }
 ```
 
-```{r, function_corrections}
+```{r function_corrections}
 apply_corrections <- function(data, daily, hourly, epa = 75){
   epa <- data %>% 
     apply_epa(by_day = daily, by_hour = hourly, epa_percent = epa)
@@ -576,7 +585,7 @@ apply_corrections <- function(data, daily, hourly, epa = 75){
 }
 ```
 
-```{r, function_tag_dates}
+```{r function_tag_dates}
 apply_date_tags <- function(dataset,
                         starts = input_date_starts, ends = input_date_ends, tags = input_date_tags,
                         date_stamp = "17 Jan 1999"){
@@ -604,7 +613,7 @@ apply_date_tags <- function(dataset,
 }
 ```
 
-```{r, function_tag_hours}
+```{r function_tag_hours}
 apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_hour_tags){
   tags <- factor(tags)
   
@@ -643,7 +652,7 @@ apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_ho
 }
 ```
 
-```{r, function_applying}
+```{r function_applying}
 applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run_date_grouping, tag_hours = run_hour_grouping){
   
   # Applying correction factors
@@ -697,17 +706,17 @@ applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run
 }
 ```
 
-```{r, data_applying}
+```{r data_applying}
 data_hourly <- applying_functions(data_pm25, group_day = TRUE, group_hour = TRUE)
 data_daily <- applying_functions(data_pm25, group_day = TRUE, group_hour = FALSE)
 data_diurnal <- applying_functions(data_pm25, group_day = FALSE, group_hour = TRUE)
 ```
 
-```{r, eclean_applying, eval=FALSE}
+```{r eclean_applying, eval=FALSE}
 remove(apply_corrections, applying_functions, apply_epa, apply_lrapa, apply_hour_tags, apply_date_tags)
 ```
 
-```{r, viz_function_map}
+```{r viz_function_map}
 # FUNCTION
 # Required inputs: pm_data (df), value (column of PM2.5 data w/in df to map), location_data (lat/long data to be joined to df; default: data_meta)
 # Optional inputs: grouping variables (1 or 2) w/ respective custom exclusions; filter for indoor/outdoor data
@@ -867,7 +876,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
 }
 ```
 
-```{r, test_map, eval=FALSE}
+```{r test_map, eval=FALSE}
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
 
 data_hourly %>% 
@@ -890,7 +899,7 @@ map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afterno
       maptype = "terrain", tint = 0.3, tint_color = "white", viridis = "magma")
 ```
 
-```{r, viz_function_single_heatmap}
+```{r viz_function_single_heatmap}
 heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
                            digits = 2, location_data = data_meta){
   
@@ -983,13 +992,13 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
 }
 ```
 
-```{r, test_heatmap_single, eval=FALSE}
+```{r test_heatmap_single, eval=FALSE}
 heatmap_single(data_hourly, "Rose City", epa_2021)
 heatmap_single(data_hourly, "STAR", temperature)
 heatmap_single(data_hourly, "Rose City", humidity)
 ```
 
-```{r, viz_function_heatmap}
+```{r viz_function_heatmap}
 heatmap_cross <- function(dataset, variable_of_interest, filter_max = NA,
                           location_data = data_meta, digits = 2){
   # Location data
@@ -1106,7 +1115,7 @@ heatmap_cross <- function(dataset, variable_of_interest, filter_max = NA,
 }
 ```
 
-```{r, test_heatmap, eval=FALSE}
+```{r test_heatmap, eval=FALSE}
 #heatmap_cross(data_pm25, variable_of_interest=pm25_atm, filter_max = 50)
 heatmap_cross(data_hourly, variable_of_interest=epa_2021, filter_max = 50)
 heatmap_cross(data_daily, variable_of_interest=lrapa)
