@@ -201,6 +201,17 @@ date_tag_list <- as.character(unique(data_full$date_tag))
 map <- leaflet(data_full) %>% 
   addProviderTiles(providers$CartoDB.DarkMatter)
 pal <- colorNumeric(palette = "viridis", domain = data_full$epa_2021)
+
+pm_popup <- paste0("<b>",data_full$label,"</b> (",data_full$latitude,", ",data_full$longitude,")",
+                   "<br><b>Device location:</b> ", data_full$DEVICE_LOCATIONTYPE,
+                  "<br><b>Internal temperature (\u00B0F):</b> ", data_full$temperature,
+                  "<br><b>RH (%):</b> ", data_full$humidity,
+                  "<br><b>EPA 2020:</b> ", data_full$epa_2020,
+                  "<br><b>EPA 2021:</b> ", data_full$epa_2021,
+                  "<br><b>LRAPA:</b> ", data_full$lrapa,
+                  " (", data_bc$event, ")")
+
+
 for(date_tag_single in date_tag_list){
   data_temp <- data_full[data_full$date_tag == date_tag_single,]
   
@@ -273,3 +284,75 @@ long_set %>%
   geom_line() +
   theme(legend.position="bottom")
 ```
+
+```{r,eval=FALSE}
+leveled_meta <- data_meta %>% 
+  mutate(label = fct_reorder(as.factor(label), desc(latitude)))
+  # arrange(desc(latitude)) %>% 
+  # mutate(label = fct_inorder(as.factor(label)))
+
+data_hourly %>% 
+  drop_na(epa_2021) %>% 
+  left_join(leveled_meta) %>% 
+  select(label, date_hour, DEVICE_LOCATIONTYPE, epa_2021) %>% 
+  full_join(
+    (data_deq %>%
+       select(date_hour, pm25_deq) %>%
+       mutate(DEVICE_LOCATIONTYPE = "deq", label = "deq") %>%
+       rename(epa_2021=pm25_deq) %>% 
+       filter(date_hour >= min(data_hourly$date_hour),
+              date_hour <= max(data_hourly$date_hour)))
+  ) %>% 
+  mutate(DEVICE_LOCATIONTYPE = factor(DEVICE_LOCATIONTYPE, levels = c("inside", "deq", "outside"))) %>% 
+  ggplot(aes(x = date_hour, y = label, fill = epa_2021)) +
+  facet_grid(DEVICE_LOCATIONTYPE~., scales="free_y", space="free_y") +
+  geom_tile() +
+  scale_fill_viridis(option="plasma", limits=c(0, 50))
+```
+
+```{r,eval=FALSE}
+ggplot(data_daily, aes(x = date, y = epa_2021, group = date)) +
+  geom_violin() + 
+  geom_jitter()
+
+data_daily %>% 
+  left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:20))) %>% 
+  drop_na(label) %>% 
+  # mutate(date = as.character(date)) %>% 
+  #filter(str_detect(label, "rd Drive")) %>% 
+  ggplot(aes(x = date, y = epa_2021, group = date)) +
+  facet_grid(DEVICE_LOCATIONTYPE~.) +
+  geom_boxplot()
+
+data_hourly %>% 
+  left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:20))) %>% 
+  ggplot(aes(x = hour, y = epa_2021, group = site_id)) +
+  facet_grid(date~DEVICE_LOCATIONTYPE) +
+  geom_point()
+
+data_hourly %>% 
+  left_join((data_meta %>% filter(str_detect(label,"rd Drive")))) %>% 
+  drop_na(label) %>% 
+  ggplot(aes(x = hour, y = epa_2021, color = date, group = date)) +
+  geom_line()
+
+data_daily %>% 
+  left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:10))) %>% 
+  drop_na(label) %>% 
+  mutate(date = day(date)) %>% 
+  streamgraph(
+    key="site_id",
+    value="epa_2021",
+    date="date",
+    scale = "continuous"
+  )
+  # sg_axis_x(5,tick_units="day")
+
+library(highcharter)
+data_daily %>% 
+  left_join(data_meta) %>% 
+  # left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:10))) %>%
+  # drop_na(label) %>%
+  hchart("streamgraph", hcaes(date, epa_2021, group=label))
+```
+
