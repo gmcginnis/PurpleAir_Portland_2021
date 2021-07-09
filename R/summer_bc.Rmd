@@ -18,7 +18,7 @@ library(viridis)
 ```
 
 ```{r inputs}
-file_data_folder <- "DST-BC-test-data-1July2021"
+file_data_folder <- "Data34_210702_10h59m"#"DST-BC-test-data-1July2021"
 
 # Use a valid Olson name; see options with OlsonNames()
 # Reported TZ for the data can be found in the settings file
@@ -249,6 +249,7 @@ viz_boxplot +
 # Used for file_data_folder <- "Data34_210702_10h59m"
 # Sensor used: Eliot Tower
 hourly_long <- data_hourly %>% 
+  filter(site_id == "789ac77fec7ab028_87245") %>% 
   ungroup() %>% 
   select(!c(date, minute, hour, hour_tag,
             temperature, humidity, pm25_cf1_A, pm25_cf1_B, pm25_atm_A, pm25_atm_B, site_id)) %>% 
@@ -287,6 +288,7 @@ data_bc_filtered %>%
   theme(legend.position = "bottom")
 
 data_pm25_long <- data_pm25 %>% 
+  filter(site_id == "789ac77fec7ab028_87245") %>% 
   select(datetime, pm25_cf1, pm25_atm) %>% 
   filter(between(datetime, min(raw_bc_data$TS), max(raw_bc_data$TS))) %>% 
   pivot_longer(cols=c(pm25_cf1,pm25_atm), names_to="corr") %>% 
@@ -295,6 +297,19 @@ data_pm25_long <- data_pm25 %>%
 data_bc_filtered %>% 
   full_join(data_pm25_long) %>% 
   ggplot(aes(datetime, value, color = pollutant)) +
+  facet_grid(rows = vars(corr), scales="free_y") +
+  geom_point(shape = 1, alpha = 0.3) +
+  geom_line() +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+data_pm25 %>% 
+  select(site_id, datetime, pm25_cf1, pm25_atm) %>% 
+  filter(between(datetime, min(raw_bc_data$TS), max(raw_bc_data$TS))) %>% 
+  pivot_longer(cols=c(pm25_cf1,pm25_atm), names_to="corr") %>% 
+  mutate(pollutant = "PM") %>% 
+  full_join(data_bc_filtered) %>% 
+  ggplot(aes(datetime, value, color = pollutant, group = site_id)) +
   facet_grid(rows = vars(corr), scales="free_y") +
   geom_point(shape = 1, alpha = 0.3) +
   geom_line() +
