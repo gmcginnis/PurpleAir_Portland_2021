@@ -450,7 +450,7 @@ apply_functions <- function (dataset, by_day = TRUE, by_hour = FALSE, tag_dates 
 ```{r data_applying}
 data_hourly <- apply_functions(data_pm25, by_day = TRUE, by_hour = TRUE)
 data_daily <- apply_functions(data_pm25, by_day = TRUE, by_hour = FALSE)
-data_diurnal <- apply_functions(data_pm25, group_day = FALSE, group_hour = TRUE)
+data_diurnal <- apply_functions(data_pm25, by_day = FALSE, by_hour = TRUE)
 ```
 
 ```{r eclean_applying, eval=FALSE}
