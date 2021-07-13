@@ -26,7 +26,7 @@ input_deq_path <- "data/deq/SEL_july.xlsx"
 input_deq_renames <- c(
   "PM2.5" = "pm25_deq",
   "Temperature" = "temperature_c",
-  "Relative Humidity" = "rh",
+  "Relative Humidity" = "humidity",
   "Wind Direction" = "wind_direction",
   "Wind Speed (mph)" = "wind_speed",
   "Black Carbon (BC6 880nm)" = "black_carbon"
@@ -84,7 +84,7 @@ data_deq <- raw_deq %>%
 # Converting deg Ç (units in which DEQ reports) to deg F (units in which PA reports)
 if ("temperature_c" %in% colnames(data_deq) == TRUE) {
   data_deq <- data_deq %>% 
-    mutate("temeprature" = (temperature_c*(9/5))+32)
+    mutate("temperature" = (temperature_c*(9/5))+32)
 }
 ```
 
