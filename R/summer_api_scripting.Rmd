@@ -45,15 +45,15 @@ include_inside <- TRUE
 input_stateCode <- "OR"
 
 # Boundaries (in degrees) of monitors to include. It can also evaluate n/s or e/w pairs of bounds individually.
-input_north <- 45.6
+# Helpful website: bboxfinder [dot] com
+input_west <- -122.854
 input_south <- 45.4
 input_east <- -122.58
-input_west <- -122.854
+input_north <- 45.6
 
 # Labels of monitors to include. If NULL/unspecified, all monitors will be included.
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
-# Use the following format (capitalization matters):
-#input_labels <- c("se", "SE", "Se", "STAR", "PSU")
+# Example format (capitalization matters!): input_labels <- c("se", "SE", "Se", "STAR", "PSU")
 input_labels <- NULL
 
 # Optional grouping settings

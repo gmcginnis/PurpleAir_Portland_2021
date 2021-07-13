@@ -20,6 +20,19 @@ library(lubridate)
 input_deq_path <- "data/deq/SEL_july.xlsx"
 ```
 
+```{r se_laf_loc}
+# The following is location data for the DEQ FRM in Portland
+data_deq_meta <- data.frame(
+  label = "DEQ SE Lafayette",
+  DEVICE_LOCATIONTYPE = factor("DEQ"), # The device is outside but this will label it separately
+  latitude = 45.496641,
+  longitude = -122.602877,
+  site_id = "41-051-0080",
+  timezone = "America/Los_Angeles"
+)
+```
+
+
 ```{r settings}
 # Input of renames. Those listed will be included in the final data frame.
 # Time stamp will be automatically renamed and kept.
@@ -78,8 +91,9 @@ data_deq <- raw_deq %>%
   rename(date_hour = `Date Time`) %>% 
   # Renaming variables based on inputs at the top
   plyr::rename(warn_missing = FALSE, input_deq_renames) %>% 
+  mutate(site_id = data_deq_meta$site_id) %>% 
   # Selecting only renamed variables in addition to time stamps
-  select(c(date_hour, intersect(all_of(input_deq_renames), names(.)), datetime_standard))
+  select(c(site_id, date_hour, intersect(all_of(input_deq_renames), names(.)), datetime_standard))
 
 # Converting deg Ç (units in which DEQ reports) to deg F (units in which PA reports)
 if ("temperature_c" %in% colnames(data_deq) == TRUE) {
