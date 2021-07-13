@@ -101,7 +101,7 @@ get_area_pas <- function(state_code = input_stateCode,
   )
   
   # Filtering (or not) filtering by state
-  if(is.null(state_code) == TRUE){
+  if (is.null(state_code) == TRUE) {
     pas_state <- pas
     print("Sensors not filtered for a specified state code.")
   } else {
@@ -127,19 +127,19 @@ remove(get_area_pas, input_stateCode, input_north, input_east, input_south, inpu
 ids_outside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = TRUE)
 ids_inside <- pas_getDeviceDeploymentIDs(pas_area, isOutside = FALSE)
 
-if(include_outside == TRUE & include_inside == TRUE){
+if (include_outside == TRUE & include_inside == TRUE) {
   ids <- c(ids_outside, ids_inside)
   inout_report <- print("Both indoor and outdoor sensor data will be loaded.")
 }
-if(include_outside == TRUE & include_inside == FALSE){
+if (include_outside == TRUE & include_inside == FALSE) {
   ids <- ids_outside
   inout_report <- print("Only outdoor sensor data will be loaded.")
 }
-if(include_outside == FALSE & include_inside == TRUE){
+if (include_outside == FALSE & include_inside == TRUE) {
   ids <- ids_inside
   inout_report <- print("Only indoor sensor data will be loaded.")
 }
-if(include_outside == FALSE & include_inside == FALSE){
+if (include_outside == FALSE & include_inside == FALSE) {
   inout_report <- warning("INPUT ERROR: Please set `include_outside` and/or `include_inside` to TRUE.")
   stop(inout_report)
 }
@@ -148,7 +148,7 @@ if(include_outside == FALSE & include_inside == FALSE){
 inout_report
 
 # Warning message if there are many monitors
-if(length(ids) > 100){
+if (length(ids) > 100) {
   warning("CAUTION: More than 100 monitors selected. Data processing will take significant time. Consider applying more area filters first!")
 }
 # Message returning the number of monitors that will be selected
@@ -177,7 +177,7 @@ input_cols_to_select <- c("created_at", "temperature", "humidity", "pm2.5_cf1", 
 # Sequencing dates into a list by 1 week gaps due to API limitations
 date_sequence <- seq(from = as.Date(input_startdate), to = as.Date(input_enddate), by = "week")
 # Adding end date to the end of the sequence if not already present in the set
-if(tail(date_sequence, n=1) != input_enddate){
+if (tail(date_sequence, n=1) != input_enddate) {
   date_sequence <- date_sequence %>% 
     append(input_enddate)
 }
@@ -380,7 +380,7 @@ column_dt <- function(dataset, unit){
 apply_qc <- function(dataset, avg_ab = TRUE){
   
   # Creating columns to average A & B data
-  if(avg_ab == TRUE){
+  if (avg_ab == TRUE) {
     dataset <- dataset %>% 
       rowwise() %>% 
       mutate(
@@ -688,14 +688,14 @@ apply_functions <- function (dataset, by_day = TRUE, by_hour = FALSE, tag_dates 
   dataset <- apply_corrections(dataset, daily = by_day, hourly = by_hour)
   print("Correction factors applied.")
   
-  if(by_day == TRUE & tag_dates == TRUE) {
+  if (by_day == TRUE & tag_dates == TRUE) {
     dataset <- apply_date_tags(dataset)
     print("Data now tagged by provided date groupings")
   } else {
     print("Date groups not applied")
   }
   
-  if(by_hour == TRUE & tag_hours == TRUE) {
+  if (by_hour == TRUE & tag_hours == TRUE) {
     dataset <- apply_hour_tags(dataset)
     print("Data now tagged by provided hour groupings")
   } else {
@@ -731,10 +731,14 @@ map_q <- function(pm_data, value, location_data = data_meta,
                   point_size = 3, viridis = "viridis"){
   
   # Warning message and halting execution if required input is missing.
-  if(missing(value) == TRUE) stop ("ERROR in argument 'value': Missing input, with no default. Execution haulted. Please input a valid PM2.5 variable (e.g. epa_2021).")
+  if (missing(value) == TRUE) {
+    stop ("ERROR in argument 'value': Missing input, with no default. Execution haulted. Please input a valid PM2.5 variable (e.g. epa_2021).")
+  }
   
   # Warning message and halting execution if inputeded data does not have more than one unique site_id (map will bug)
-  if(length(unique(pm_data$site_id)) == 1) stop("ERROR: Insufficient data to create a map. Provide a data set with more than one site.")
+  if (length(unique(pm_data$site_id)) == 1) {
+    stop("ERROR: Insufficient data to create a map. Provide a data set with more than one site.")
+  }
   
   input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
   
@@ -755,13 +759,13 @@ map_q <- function(pm_data, value, location_data = data_meta,
   print("Data now grouped and averaged. Location data added.")
   
   # Custom filtering: exclusions for input categories
-  if(is.null(exclude) == FALSE){
+  if (is.null(exclude) == FALSE) {
     to_exclude <- paste(exclude, collapse = "|")
     data_temp <- data_temp %>% 
       filter(!str_detect({{grouping_var}}, to_exclude))
     print(paste("Excluded", exclude, "from", deparse(substitute(grouping_var))))
   }
-  if(is.null(exclude_2) == FALSE){
+  if (is.null(exclude_2) == FALSE) {
     to_exclude_2 <- paste(exclude_2, collapse = "|")
     data_temp <- data_temp %>% 
       filter(!str_detect({{grouping_var_2}}, to_exclude_2))
@@ -773,13 +777,13 @@ map_q <- function(pm_data, value, location_data = data_meta,
   
   # Custom filtering: exclusions for inside/outside
   # Will also override shape arguments to prevent excluded category from showing in the legend
-  if(outside == FALSE){
+  if (outside == FALSE) {
     data_temp <- data_temp %>% 
       filter(DEVICE_LOCATIONTYPE != "outside")
     print("Outdoor data excluded")
     shapes_inout <- c("inside" = 23)
   }
-  if(inside == FALSE){
+  if (inside == FALSE) {
     data_temp <- data_temp %>% 
       filter(DEVICE_LOCATIONTYPE != "inside")
     print("Indoor data excluded")
@@ -828,9 +832,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
   
   ## Faceting by grouping variable(s) and applying an appropriate caption to reflect the grouping
   # Facet wrap if 1 grouping variable provided
-  if(deparse(substitute(grouping_var)) != "NULL" &
-     deparse(substitute(grouping_var_2)) == "NULL"
-  ){
+  if (deparse(substitute(grouping_var)) != "NULL" & deparse(substitute(grouping_var_2)) == "NULL") {
     plot <- plot +
       facet_wrap(vars({{grouping_var}})) +
       labs(
@@ -843,9 +845,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
     print(paste("Plot now faceted by", deparse(substitute(grouping_var))))
   }
   # Facet grid if 2 grouping variables provided
-  if(deparse(substitute(grouping_var)) != "NULL" &
-     deparse(substitute(grouping_var_2)) != "NULL"
-  ){
+  if (deparse(substitute(grouping_var)) != "NULL" & deparse(substitute(grouping_var_2)) != "NULL") {
     plot <- plot +
       facet_grid(
       formula(paste(
@@ -925,10 +925,10 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
     distinct()
   
   # Verification that only one monitor is selected. Execution will halt if 0 or >1 are detected
-  if(length(unique(temp_df$label)) == 0){
+  if (length(unique(temp_df$label)) == 0) {
     stop("ERROR: No monitors selected. Please verify that a distinct label was provided. Capitalization matters.")
   }
-  if(length(unique(temp_df$label)) > 1){
+  if (length(unique(temp_df$label)) > 1) {
     print("Matching locations from meta data:")
     temp_loc %>% filter(str_detect(label, site_of_interest)) %>% distinct() %>% pull(label) %>% print()
     print("Matching locations that contain values of interest:")
@@ -948,14 +948,18 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
   lab_fill <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
   fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA))
   
-  if(str_detect(deparse(substitute(variable_of_interest)), "temp") == TRUE){
+  if (str_detect(deparse(substitute(variable_of_interest)), "temp") == TRUE) {
     lab_title <- paste("Heatmap of internal temperature values across time")
     lab_fill <- "Internal temperature (\u00B0F):"
     fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
     print("Temperature detected as variable of interest; adjusting labels accordingly")
+    
+    if (str_detect(deparse(substitute(variable_of_interest)), "temperature_c") == TRUE) {
+      lab_fill <- "Internal temperature (\u00B0C):"
+      print("Temperature detected to be in Celsius")
+    }
   }
-  if(str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE |
-     deparse(substitute(variable_of_interest)) == "rh"){
+  if (str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE) {
     lab_title <- paste("Heatmap of RH values across time")
     lab_fill <- "Relative humidity (%):"
     fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.95, begin = 0.15)
@@ -1079,7 +1083,7 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
                       color = "none")
   
   # If manually applying a max filter value
-  if(is.na(filter_max) == FALSE){
+  if (is.na(filter_max) == FALSE) {
     # Replacing the values above the set max to be NA so that they will be colored differently on the map
     dataset <- dataset %>% 
       mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>{{filter_max}}), NA))
@@ -1107,20 +1111,19 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = max_color)
   
   # Adjusting color scale and labels if the variable of interest is internal temperature
-  if(str_detect(deparse(substitute(variable_of_interest)), "temperature") == TRUE){
+  if (str_detect(deparse(substitute(variable_of_interest)), "temperature") == TRUE) {
     lab_title <- paste("Heatmap of internal temperature values across time")
     fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
     print("Temperature detected as variable of interest; adjusting labels accordingly")
     lab_fill <- "Internal temperature (\u00B0F):"
     
-    if(str_detect(deparse(substitute(variable_of_interest)), "temperature_c") == TRUE) {
+    if (str_detect(deparse(substitute(variable_of_interest)), "temperature_c") == TRUE) {
       lab_fill <- "Internal temperature (\u00B0C):"
       print("Temperature detected to be in Celsius")
     }
   }
   # Adjusting color scale and labels if the variable of interest is RH
-  if(str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE |
-     deparse(substitute(variable_of_interest)) == "rh"){
+  if (str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE) {
     lab_title <- paste("Heatmap of RH values across time")
     lab_fill <- "Relative humidity (%):"
     fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9)
@@ -1133,19 +1136,19 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   x_angle <- 30
   
   # Setting axis breaks based on the minimum time unit in the data set
-  if("datetime" %in% colnames(dataset) == TRUE){
+  if ("datetime" %in% colnames(dataset) == TRUE) {
     dataset <- dataset %>% rename(timestamp = datetime)
     x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
-  } else if("date_hour" %in% colnames(dataset) == TRUE){
+  } else if ("date_hour" %in% colnames(dataset) == TRUE) {
     dataset <- dataset %>% rename(timestamp = date_hour)
     x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
-  } else if("date" %in% colnames(dataset) == TRUE){
+  } else if ("date" %in% colnames(dataset) == TRUE) {
     dataset <- dataset %>% rename(timestamp = date)
     x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
-  } else if("hour" %in% colnames(dataset) == TRUE){
+  } else if ("hour" %in% colnames(dataset) == TRUE) {
     dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
     x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
     x_angle <- 45
