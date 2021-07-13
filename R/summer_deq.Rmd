@@ -18,7 +18,9 @@ library(lubridate)
 
 ```{r inputs}
 input_deq_path <- "data/deq/SEL_july.xlsx"
+```
 
+```{r settings}
 # Input of renames. Those listed will be included in the final data frame.
 # Time stamp will be automatically renamed and kept.
 input_deq_renames <- c(
@@ -31,40 +33,33 @@ input_deq_renames <- c(
 )
 ```
 
+
 ```{r data_import}
 
 # Creating a list of variable names
 data_deq_names <- read_excel(input_deq_path,
-                             # Selecting sheet 1:
-                             sheet = 1,
-                             # Skipping the empty rows at the top:
-                             skip = 2,
-                             # Selecting 0 observations:
-                             n_max = 0) %>% names()
+                             sheet = 1, # Selecting sheet 1
+                             skip = 2, # Skipping the empty rows at the top
+                             n_max = 0) %>% names() # Selecting 0 observations, and extracting the names only
 
 # Creating a data frame of the data
 data_deq_raw <- read_excel(input_deq_path,
-                           # Selecting sheet 1:
-                           sheet = 1,
-                           # Skipping the topmost rows naming the variables, etc.:
-                           skip = 4,
-                           # NAs are reported with the following symbol in the Excel file:
-                           na = "----",
-                           # Setting column names to be those listed above:
-                           col_names = data_deq_names)
+                           sheet = 1, # Selecting sheet 1
+                           skip = 4, # Skipping the topmost rows naming the variables, etc
+                           na = "----", # NAs are reported using this symbol in the Excel file
+                           col_names = data_deq_names) # setting column names to be those listed above
 
 # Data frame of units, for reference if needed.
-read_excel(input_deq_path,
-           # Selecting sheet 1:
-           sheet = 1,
-           # Skipping the empty rows at the top:
-           skip = 2,
-           # Selecting 1 "observation" (next row):
-           n_max = 1)
-
-# Cleaning environment
-remove(data_deq_names)
+deq_units <- read_excel(input_deq_path,
+                        sheet = 1, # Selecting sheet 1
+                        skip = 2, # Skipping the empty rows at the top
+                        n_max = 1) # Selecting 1 "observation" (next row)
 ```
+
+```{r eclean_read}
+remove(data_deq_names, deq_units)
+```
+
 
 ```{r data_wrangling}
 data_deq <- data_deq_raw %>% 
@@ -81,34 +76,8 @@ data_deq <- data_deq_raw %>%
   plyr::rename(warn_missing = FALSE, input_deq_renames) %>% 
   # Selecting only renamed variables in addition to time stamps
   select(c(date, date_hour, intersect(all_of(input_deq_renames), names(.)), datetime_standard))
+```
 
-# Cleaning environment
+```{r eclean_wrangle}
 remove(data_deq_raw, input_deq_path, input_deq_renames)
 ```
-
-```{r,eval=FALSE}
-# id_star_sel <- data_meta %>% 
-#   filter(str_detect(label, "PSU STAR LAB SEL")) %>% 
-#   pull(site_id)
-# 
-# data_pa_star <- data_hourly %>% 
-#   filter(site_id == id_star_sel)
-# 
-# data_star_sel <- data_pa_star %>% 
-data_star_sel <- data_pa_hourly %>% 
-  full_join(data_deq) %>% 
-  select(date, date_hour, pm25_atm, pm25_cf1, epa_2020, epa_2021, lrapa, pm25_deq, date_tag, hour_tag) %>% 
-  drop_na(date_tag)
-
-data_star_sel %>% 
-  mutate(across(where(is.numeric), ~.-pm25_deq)) %>% 
-  pivot_longer(cols = where(is.numeric)) %>% 
-  filter(name %in% c("epa_2020", "epa_2021", "lrapa", "pm25_deq")) %>% 
-  ggplot(aes(date_hour, value, color = name)) +
-  #facet_wrap(~date_tag, scales = "free") +
-  #facet_grid(hour_tag~date_tag, scales = "free") +
-  #facet_wrap(hour_tag~date_tag, scales = "free") +
-  geom_line() +
-  theme(legend.position = "bottom")
-```
-

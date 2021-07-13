@@ -253,9 +253,8 @@ for (id in ids[1:id_count]) {
 ```
 
 ```{r eclean_iteration}
-remove(count, id, id_count, ids, input_baseUrl, input_cols_to_select, date_sequence)
+remove(count, id, ids, input_baseUrl, input_cols_to_select, date_sequence)
 ```
-
 
 ```{r pat_joining}
 # Joining data frames
@@ -273,8 +272,8 @@ raw_data <- full_join(data_a, data_b, # Data sets to join
 
 # Review
 print(sprintf("Successfully created %d/%d pat objects.", length(unique(raw_data$site_id)), id_count))
+remove(id_count)
 ```
-
 
 ```{r eclean_joining}
 # Already have both saved in raw_data
@@ -637,7 +636,6 @@ apply_date_tags <- function(dataset,
 }
 ```
 
-
 ```{r function_tag_hours}
 apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_hour_tags){
   
@@ -896,100 +894,8 @@ map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afterno
 
 ```{r viz_function_single_heatmap}
 heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
-                           digits = 2, location_data = data_meta){
-  
-  if(deparse(substitute(variable_of_interest)) %in% colnames(dataset) == FALSE){
-    dataset %>%
-      slice(1) %>%
-      ungroup() %>%
-      select(!intersect(c("hour", "minute"), colnames(.))) %>%
-      select_if(is.numeric) %>%
-      colnames() %>%
-      print()
-    stop("ERROR: Inputted variable of interest is not in the provided data set. Execution halted. Valid inputs are listed above")
-  }
-  
-  temp_loc <- location_data %>% 
-    select(site_id, label)
-  
-  temp_df <- dataset %>% 
-    ungroup() %>% 
-    # Adding labels to the data set
-    left_join(temp_loc) %>% 
-    # Filtering data set based on inputted site of interest
-    filter(str_detect(label, site_of_interest)) %>% 
-    # Removing empty values from variable of interest (otherwise is grey when mapping)
-    drop_na({{variable_of_interest}}) %>% 
-    # Removing duplicate rows
-    distinct()
-  
-  # Verification that only one monitor is selected. Execution will halt if 0 or >1 are detected
-  if(length(unique(temp_df$label)) == 0){
-    stop("ERROR: No monitors selected. Please verify that a distinct label was provided. Capitalization matters.")
-  }
-  if(length(unique(temp_df$label)) > 1){
-    print("Matching locations from meta data:")
-    temp_loc %>% filter(str_detect(label, site_of_interest)) %>% distinct() %>% pull(label) %>% print()
-    print("Matching locations that contain values of interest:")
-    temp_df %>% pull(label) %>% unique() %>% print()
-    stop("ERROR: More than one site selected. Please use a more precise string argument; matching values are listed above.")
-  }
-  
-  
-  lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
-  lab_subtitle <- paste0("Data from PurpleAir. Monitor selected: \"", unique(temp_df$label),
-                        "\". Data plotted: ", deparse(substitute(variable_of_interest)))
-  lab_fill <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
-  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA))
-  
-  if(str_detect(deparse(substitute(variable_of_interest)), "temp") == TRUE){
-    lab_title <- paste("Heatmap of internal temperature values across time")
-    lab_fill <- "Internal temperature (\u00B0F):"
-    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
-    print("Temperature detected as variable of interest; adjusting labels accordingly")
-  }
-  if(str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE |
-     deparse(substitute(variable_of_interest)) == "rh"){
-    lab_title <- paste("Heatmap of RH values across time")
-    lab_fill <- "Relative humidity (%):"
-    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9)
-    print("RH detected as variable of interest; adjusting labels accordingly")
-  }
-  
-  # Allows for ending 0 when rounding
-  label_digits <- paste0("%.", deparse(substitute(digits)), "f")
-  
-  # Plotting data
-  temp_df %>% 
-    ggplot(aes(x = date,
-               y = hour,
-               fill = {{variable_of_interest}},
-               label = as.character(sprintf(label_digits, round({{variable_of_interest}}, digits = digits)))
-    )) +
-    geom_tile() +
-    fill_colors +
-    geom_text() +
-    # Setting scale breaks such that 0:23 will always display, regardless of data availability
-    scale_y_continuous(trans = "reverse", breaks = 0:23, limits = c(24,-1)) +
-    scale_x_date(breaks = "1 day", date_labels = "%d %b %Y") +
-    theme_minimal() +
-    theme(
-      legend.position = "bottom",
-      panel.grid = element_blank(),
-      axis.title.x = element_blank()
-    ) +
-    labs(
-      title = lab_title,
-      subtitle = lab_subtitle,
-      fill = lab_fill,
-      y = "Hour of the day"
-    )
-}
-```
-
-```{r viz_function_single_heatmap}
-heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
-                           digits = 2, location_data = data_meta){
+                           data_labels = TRUE, digits = 2, date_breaks = "1 day",
+                           location_data = data_meta){
   
   if ("date_hour" %in% colnames(dataset) == FALSE) { stop("ERROR: Inputted data set is not hourly by day") }
   
@@ -1029,10 +935,15 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
     stop("ERROR: More than one site selected. Please use a more precise string argument; matching values are listed above.")
   }
   
+  min_date <- format(min(date(temp_df$date_hour)), "%d %b %Y")
+  max_date <- format(max(date(temp_df$date_hour)), "%d %b %Y")
   
   lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
-  lab_subtitle <- paste0("Data from PurpleAir. Monitor selected: \"", unique(temp_df$label),
-                        "\". Data plotted: ", deparse(substitute(variable_of_interest)))
+  lab_subtitle <- paste0("PurpleAir data of monitor \"", unique(temp_df$label), "\"\nfrom ",
+                         min_date, " to ", max_date,
+                         ". Data plotted: ", deparse(substitute(variable_of_interest)))
+  # lab_subtitle <- paste0("Data from PurpleAir. Monitor selected: \"", unique(temp_df$label),
+  #                       "\". Data plotted: ", deparse(substitute(variable_of_interest)))
   lab_fill <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
   fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA))
   
@@ -1052,6 +963,9 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
   
   # Allows for ending 0 when rounding
   label_digits <- paste0("%.", deparse(substitute(digits)), "f")
+  if (data_labels == TRUE) {
+    data_labels <- geom_text()
+  } else { data_labels <- NULL }
   
   # Plotting data
   temp_df %>% 
@@ -1062,25 +976,30 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
     )) +
     geom_tile() +
     fill_colors +
-    geom_text() +
+    data_labels +
     # Setting scale breaks such that 0:23 will always display, regardless of data availability
     scale_y_continuous(trans = "reverse", # Reverse such that morning is at top, night at bottom
                        labels = function(x) sprintf("%02d:00", x), # labeling with proper hourly formatting
                        breaks = 0:23, # breaks every hour
                        limits = c(24,-1)) +
-    scale_x_date(breaks = "1 day", date_labels = "%d %b %Y") +
+    scale_x_date(breaks = date_breaks,
+                 expand = c(0.01, 0.01),
+                 date_labels = "%d %b") +
     theme_minimal() +
     theme(
       legend.position = "bottom",
       panel.grid = element_blank(),
-      axis.title.x = element_blank()
+      axis.title.x = element_blank(),
+      axis.text.x = element_text(angle = 30, hjust = 1),
+      axis.ticks.x = element_line()
     ) +
     labs(
       title = lab_title,
       subtitle = lab_subtitle,
       fill = lab_fill,
       y = "Hour of the day"
-    )
+    ) + 
+    guides(fill = guide_colorbar(barwidth = 10))
 }
 ```
 
@@ -1134,6 +1053,10 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     mutate(label = fct_reorder(as.factor(label), desc(latitude))) %>% 
     # Selecting only variables of interest to save space
     select(site_id, label, DEVICE_LOCATIONTYPE)
+  
+  # Formatting dates
+  start_date <- format(as.Date(start_date), "%d %b %Y")
+  end_date <- format(as.Date(end_date), "%d %b %Y")
   
   # Default plot labels
   lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
@@ -1206,15 +1129,15 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   # Setting axis breaks based on the minimum time unit in the data set
   if("datetime" %in% colnames(dataset) == TRUE){
     dataset <- dataset %>% rename(timestamp = datetime)
-    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b %Y", expand = options_expand)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
   } else if("date_hour" %in% colnames(dataset) == TRUE){
     dataset <- dataset %>% rename(timestamp = date_hour)
-    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b %Y", expand = options_expand)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
   } else if("date" %in% colnames(dataset) == TRUE){
     dataset <- dataset %>% rename(timestamp = date)
-    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b %Y", expand = options_expand)
+    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
   } else if("hour" %in% colnames(dataset) == TRUE){
     dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))

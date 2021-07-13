@@ -30,6 +30,28 @@ input_path_filter <- "PSU STAR LAB SEL"
 input_timezone <- "America/Los_Angeles"
 ```
 
+```{r}
+## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run date grouping?
+run_date_grouping <- TRUE
+# Date grouping categories:
+input_date_tags <- c("Before", "Fire", "After")
+# Start dates (in a list, "YYYY-MM-DD")
+input_date_starts <- c("2020-09-01", "2020-09-10", "2020-09-20")
+# End dates (in a list, "YYYY-MM-DD")
+input_date_ends <- c("2020-09-09", "2020-09-19", "2020-09-30")
+
+## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
+# Run hour grouping?
+run_hour_grouping <- TRUE
+# Hour grouping categories:
+input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
+# Start hours (in a list, using full hours in 24 hour format)
+input_hour_starts <- c(5, 12, 17, 21)
+# End hours will be automatically generated
+```
+
+
 ```{r settings}
 # list of (ORIGINAL name) variables to skip when reading file
 input_skips <- c(
@@ -76,7 +98,7 @@ file_list <- list.files(path = input_path,
 ```{r location_index}
 # Input: list of files in path
 # Output: data frame with sensor tag, latitude, longitude, inside/outside, timezone
-data_loc <- data.frame(source = file_list) %>% 
+data_pa_meta <- data.frame(source = file_list) %>% 
   mutate(
     loc_path = str_extract(source, "\\w.+(?= \\((outside|inside|undefined))"),
     label = str_replace(loc_path, paste(input_path, "/", sep = ""), ""),
@@ -111,22 +133,13 @@ data_loc <- data.frame(source = file_list) %>%
 # Input: One file path
 # Output: Data frame of input file with relevant info in columns
 clean_data <- function(input_file, renames = input_renames, selects = input_selects, skips = input_skips){
-#clean_data <- function(input_file, renames = input_renames, selects = input_selects, skips = input_skips, time_zone = input_timezone){
   fread(input_file,
         sep = ",",
-        #drop = input_skips,
         fill = TRUE) %>% 
     select(!intersect(all_of(skips), names(.))) %>% 
     plyr::rename(warn_missing = FALSE, renames) %>% 
     select(created_at, intersect(all_of(selects), names(.))) %>%
     mutate(datetime = as.POSIXct(created_at, tz = "UTC")) %>% 
-    # mutate(
-    #   datetime_utc = as.POSIXct(created_at, tzone = "UTC"),
-    #   datetime_tz = lubridate::with_tz(datetime_utc, tzone = time_zone),
-    #   # 2 minute intervals are used when averaging A&B sensor data if unaveraged data is used
-    #   datetime = floor_date(datetime_tz, unit = "2 minutes")
-    #   #datetime = lubridate::with_tz(datetime_utc, "Etc/GMT+8")
-    # ) %>% 
     select(!created_at) %>% 
     mutate(
       source = input_file,
@@ -139,7 +152,7 @@ clean_data <- function(input_file, renames = input_renames, selects = input_sele
     ) %>% 
     select(!c(source, loc_path)) %>% 
     # Adding site_id variable so that same functions from API can also apply here
-    mutate(site_id = label)
+    rename(site_id = label)
 }
 ```
 
@@ -185,32 +198,38 @@ for(file_single in file_list){
   remove(file_single)
   
 }
+```
 
-#remove(input_read_primary, input_read_secondary, count_active, count_total)
+```{r eclean_iteration}
 remove(clean_data, count_active, count_total, input_path, input_renames, input_selects, input_skips)
 ```
 
+
 ```{r combine}
 if(input_read_primary == TRUE & input_read_secondary == TRUE){
-  data_pa_raw <- data_primary %>% 
+  raw_pa_data <- data_primary %>% 
     full_join(data_secondary)
   message_combine <- "Primary and secondary data frames now joined."
 }
 if(input_read_secondary == FALSE){
-  data_pa_raw <- data_primary
+  raw_pa_data <- data_primary
   message_combine <- "Only primary data selected."
 }
 if(input_read_primary == FALSE){
-  data_pa_raw <- data_secondary
+  raw_pa_data <- data_secondary
   message_combine <- "Only secondary data selected."
 }
 
 print(message_combine)
+```
+
+```{r eclean_combine}
 remove(message_combine, data_primary, data_secondary)
 ```
 
+
 ```{r qc}
-cols_to_pivot <- data_pa_raw %>%
+cols_to_pivot <- raw_pa_data %>%
   # Selecting one row, for ease of processing
   slice(1) %>% 
   # Selecting all numeric columns
@@ -219,20 +238,28 @@ cols_to_pivot <- data_pa_raw %>%
   select(!intersect(c("temperature", "humidity"), names(.))) %>% 
   names()
 
-data_pa <- data_pa_raw %>% 
+data_pa <- raw_pa_data %>% 
   pivot_wider(names_from = loc_ab, values_from = all_of(cols_to_pivot)) %>% 
   mutate(datetime = floor_date(datetime, unit = "2 minutes")) %>% 
   group_by(site_id, datetime) %>% 
   summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
   apply_qc() %>% 
-  adjust_timezone(location_data = data_loc) %>% 
-  select(site_id, datetime, date, date_hour, everything())
+  adjust_timezone(location_data = data_pa_meta) %>% 
+  select(site_id, datetime, everything())
+
+remove(cols_to_pivot)
 ```
 
+```{r dates}
+input_startdate <- min((data_pa %>% column_dt("date"))$date)
+input_enddate <- max((data_pa %>% column_dt("date"))$date)
+```
+
+
 ```{r auto_apply}
-data_pa_hourly <- applying_functions(data_pa, group_day = TRUE, group_hour = TRUE)
-data_pa_daily <- applying_functions(data_pa, group_day = TRUE, group_hour = FALSE)
-data_pa_diurnal <- applying_functions(data_pa, group_day = FALSE, group_hour = TRUE)
+data_pa_hourly <- apply_functions(data_pa, by_day = TRUE, by_hour = TRUE)
+data_pa_daily <- apply_functions(data_pa, by_day = TRUE, by_hour = FALSE)
+data_pa_diurnal <- apply_functions(data_pa, by_day = FALSE, by_hour = TRUE)
 ```
 
 ```{r manual_apply, eval=FALSE}
@@ -248,7 +275,7 @@ data_pa_daily <- data_pa %>%
 
 ```{r mapping_test, eval=FALSE}
 data_pa_hourly %>%
-  map_q(value = pm25_atm, location_data = data_loc, grouping_var = hour_tag)
+  map_q(value = pm25_atm, location_data = data_pa_meta, grouping_var = hour_tag)
 
 long_set <- data_pa_hourly %>% 
   pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
