@@ -563,3 +563,125 @@ data_diurnal <- applying_functions(data_pm25, group_day = FALSE, group_hour = TR
 ```{r eclean_applying, eval=FALSE}
 remove(apply_corrections, applying_functions, apply_epa, apply_lrapa, apply_hour_tags, apply_date_tags)
 ```
+
+
+```{r viz_function_single_heatmap,eval=FALSE}
+heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
+                           digits = 2, location_data = data_meta){
+  
+  if(deparse(substitute(variable_of_interest)) %in% colnames(dataset) == FALSE){
+    dataset %>%
+      slice(1) %>%
+      ungroup() %>%
+      select(!intersect(c("hour", "minute"), colnames(.))) %>%
+      select_if(is.numeric) %>%
+      colnames() %>%
+      print()
+    stop("ERROR: Inputted variable of interest is not in the provided data set. Execution halted. Valid inputs are listed above")
+  }
+  
+  temp_loc <- location_data %>% 
+    select(site_id, label)
+  
+  temp_df <- dataset %>% 
+    ungroup() %>% 
+    # Adding labels to the data set
+    left_join(temp_loc) %>% 
+    # Filtering data set based on inputted site of interest
+    filter(str_detect(label, site_of_interest)) %>% 
+    # Removing empty values from variable of interest (otherwise is grey when mapping)
+    drop_na({{variable_of_interest}}) %>% 
+    # Removing duplicate rows
+    distinct()
+  
+  # Verification that only one monitor is selected. Execution will halt if 0 or >1 are detected
+  if(length(unique(temp_df$label)) == 0){
+    stop("ERROR: No monitors selected. Please verify that a distinct label was provided. Capitalization matters.")
+  }
+  if(length(unique(temp_df$label)) > 1){
+    print("Matching locations from meta data:")
+    temp_loc %>% filter(str_detect(label, site_of_interest)) %>% distinct() %>% pull(label) %>% print()
+    print("Matching locations that contain values of interest:")
+    temp_df %>% pull(label) %>% unique() %>% print()
+    stop("ERROR: More than one site selected. Please use a more precise string argument; matching values are listed above.")
+  }
+  
+  
+  lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
+  lab_subtitle <- paste0("Data from PurpleAir. Monitor selected: \"", unique(temp_df$label),
+                        "\". Data plotted: ", deparse(substitute(variable_of_interest)))
+  lab_fill <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA))
+  
+  if(str_detect(deparse(substitute(variable_of_interest)), "temp") == TRUE){
+    lab_title <- paste("Heatmap of internal temperature values across time")
+    lab_fill <- "Internal temperature (\u00B0F):"
+    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
+    print("Temperature detected as variable of interest; adjusting labels accordingly")
+  }
+  if(str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE |
+     deparse(substitute(variable_of_interest)) == "rh"){
+    lab_title <- paste("Heatmap of RH values across time")
+    lab_fill <- "Relative humidity (%):"
+    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9)
+    print("RH detected as variable of interest; adjusting labels accordingly")
+  }
+  
+  # Allows for ending 0 when rounding
+  label_digits <- paste0("%.", deparse(substitute(digits)), "f")
+  
+  # Plotting data
+  temp_df %>% 
+    ggplot(aes(x = date,
+               y = hour,
+               fill = {{variable_of_interest}},
+               label = as.character(sprintf(label_digits, round({{variable_of_interest}}, digits = digits)))
+    )) +
+    geom_tile() +
+    fill_colors +
+    geom_text() +
+    # Setting scale breaks such that 0:23 will always display, regardless of data availability
+    scale_y_continuous(trans = "reverse", breaks = 0:23, limits = c(24,-1)) +
+    scale_x_date(breaks = "1 day", date_labels = "%d %b %Y") +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      panel.grid = element_blank(),
+      axis.title.x = element_blank()
+    ) +
+    labs(
+      title = lab_title,
+      subtitle = lab_subtitle,
+      fill = lab_fill,
+      y = "Hour of the day"
+    )
+}
+```
+
+
+## EPA viz
+```{r,eval=FALSE}
+# id_star_sel <- data_meta %>% 
+#   filter(str_detect(label, "PSU STAR LAB SEL")) %>% 
+#   pull(site_id)
+# 
+# data_pa_star <- data_hourly %>% 
+#   filter(site_id == id_star_sel)
+# 
+# data_star_sel <- data_pa_star %>% 
+data_star_sel <- data_pa_hourly %>% 
+  full_join(data_deq) %>% 
+  select(date, date_hour, pm25_atm, pm25_cf1, epa_2020, epa_2021, lrapa, pm25_deq, date_tag, hour_tag) %>% 
+  drop_na(date_tag)
+
+data_star_sel %>% 
+  mutate(across(where(is.numeric), ~.-pm25_deq)) %>% 
+  pivot_longer(cols = where(is.numeric)) %>% 
+  filter(name %in% c("epa_2020", "epa_2021", "lrapa", "pm25_deq")) %>% 
+  ggplot(aes(date_hour, value, color = name)) +
+  #facet_wrap(~date_tag, scales = "free") +
+  #facet_grid(hour_tag~date_tag, scales = "free") +
+  #facet_wrap(hour_tag~date_tag, scales = "free") +
+  geom_line() +
+  theme(legend.position = "bottom")
+```
