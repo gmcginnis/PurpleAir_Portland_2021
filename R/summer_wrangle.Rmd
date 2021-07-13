@@ -31,8 +31,9 @@ input_timezone <- "America/Los_Angeles"
 ```
 
 ```{r}
-## DATE GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
-# Run date grouping?
+# Optional grouping settings
+## DATE GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
+# Run date grouping? If set to "FALSE", the date inputs below will not matter (but will still appear in the environment)
 run_date_grouping <- TRUE
 # Date grouping categories:
 input_date_tags <- c("Before", "Fire", "After")
@@ -41,8 +42,8 @@ input_date_starts <- c("2020-09-01", "2020-09-10", "2020-09-20")
 # End dates (in a list, "YYYY-MM-DD")
 input_date_ends <- c("2020-09-09", "2020-09-19", "2020-09-30")
 
-## HOUR GROUPING: group values into tags (will not impact raw data output, but can be useful when graphing)
-# Run hour grouping?
+## HOUR GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
+# Run hour grouping? If set to "FALSE", the hour inputs below will not matter (but will still appear in the environment)
 run_hour_grouping <- TRUE
 # Hour grouping categories:
 input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
