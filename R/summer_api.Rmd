@@ -137,3 +137,429 @@ raw_data %>%
     datetime_new = with_tz(datetime, tzone = timezone)
   )
 ```
+
+
+code before hour changes
+
+```{r hour_testing, eval=FALSE}
+#lims <- as.POSIXct(strptime(c("1970-01-01 00:00","1970-01-01 23:00"), format = "%Y-%m-%d %H:%M"))
+starts <- input_hour_starts
+tags <- factor(input_hour_tags)
+
+hours_in_day <- data.frame(starts = 0:23)
+
+new_hour <- data.frame(starts, tags) %>% 
+  mutate(
+    ends = lead(starts - 1),
+    ends = replace_na(ends, starts[1]-1),
+    tags = paste0(tags, "\n(", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
+  ) %>% 
+  arrange(starts) %>% 
+  mutate(hour_tag = fct_inorder(tags)) %>%
+  complete(starts = full_seq(starts, 1)) %>%
+  right_join(hours_in_day) %>%
+  rename(hour = starts) %>%
+  fill(hour_tag) %>%
+  select(!c(tags, ends)) %>% 
+  mutate(hour = hms::as_hms(hour*60*60))
+
+dat %>% left_join(new_hour)
+
+data_temp <- data.frame(starts, tags) %>% 
+  mutate(
+    ends = lead(starts - 1),
+    ends = replace_na(ends, starts[1]-1),
+    tags = paste0(tags, "\n(", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
+  ) %>% 
+  arrange(starts) %>% 
+  mutate(hour_tag = fct_inorder(tags)) %>%
+  complete(starts = full_seq(starts, 1)) %>%
+  right_join(hours_in_day) %>%
+  rename(hour = starts) %>%
+  fill(hour_tag) %>%
+  select(!c(tags, ends))
+
+
+dat <- raw_data %>% 
+  filter(site_id==id) %>% 
+  mutate(
+    hr = hour(datetime),
+    time = hms::as_hms(datetime),
+    # sec_round = hms::round_hms(time, 60*60),
+    # round = hms::as_hms(round(datetime, units  = "hours")),
+    hour = hms::as_hms(hour(datetime)*60*60)
+    # hour = as_datetime(hour)
+    #hrrr = hms::round_hms(time, 60*60)
+  ) %>% 
+  group_by(hour) %>% 
+  summarize(mean = mean(temperature, na.rm = TRUE))
+
+lims <- c(min(dat$hour), max(dat$hour))
+
+ggplot(dat, aes(x = hour, y = mean)) +
+  geom_point() +
+  scale_x_datetime(breaks = "1 hour",
+    #breaks = scales::date_breaks("1 hour"),
+                   date_labels = "%H:%M",
+    #expand = c(0,0)
+    expand = expansion(mult = c(0.01, 0.01))
+                   #limits = lims
+                   ) +
+  theme(axis.text.x = element_text(angle = 30))
+  #scale_x_time(breaks = scales::breaks_width("1 hour"))
+  #scale_x_time(breaks = scales::breaks_width("1 hour"), labels = scales::label_time(format="%H:%M"))
+```
+
+
+```{r function_tz}
+# Time zones are reported as a variable when downloading the data. Time stamps are reported in UTC. The following will convert the time stamps to said reported time zone.
+# If more than one time zone is reported in the data, the conversion will use the time zone most frequently used in the data set. This is because no more than one time zone can be applied to a date time variable.
+adjust_timezone <- function(dataset, location_data = raw_meta){
+  
+  # Translation: If more than 1 unique timezone is reported in the data frame, then:
+  if(length(unique(location_data$timezone)) > 1){
+  print("Multiple time zones reported. Timestamp will be based on the most frequent time zone reported.")
+  timezone <- (location_data %>% 
+                 group_by(timezone) %>% 
+                 count() %>% 
+                 arrange(desc(n)) %>% 
+                 pull(timezone))[1]
+  } else {
+    timezone <- unique(location_data$timezone)
+  }
+  
+  dataset_new <- dataset %>%
+    # Original time stamps (in UTC) will be preserved
+    rename(datetime_utc = datetime) %>% 
+    # # Creating variables for date and hour
+    # mutate(
+    #   datetime = with_tz(datetime_utc, tzone = timezone),
+    #   date = date(datetime),
+    #   date_hour = floor_date(datetime, unit = "hour")
+    # )
+    # HR_TESTING
+    mutate(
+      datetime = with_tz(datetime_utc, tzone = timezone),
+      date = date(datetime),
+      time = hms::as_hms(datetime),
+      date_hour = floor_date(datetime, unit = "hour"),
+      hour = hms::as_hms(date_hour)
+    )
+  
+  print(paste("Time zone applied:", timezone))
+  return(dataset_new)
+}
+```
+
+```{r function_qc}
+apply_qc <- function(dataset, avg_ab = TRUE){
+  
+  # Creating columns to average A & B data
+  if(avg_ab == TRUE){
+    dataset <- dataset %>% 
+      rowwise() %>% 
+      mutate(
+        pm25_cf1 = mean(c(pm25_cf1_A, pm25_cf1_B), na.rm = TRUE),
+        pm25_atm = mean(c(pm25_atm_A, pm25_atm_B), na.rm = TRUE)
+      ) %>% 
+      ungroup()
+    print("Columns for averages of A & B data added")
+  }
+  
+  data_qc <- dataset %>% 
+    # Basic quality control; only physically possible values (and real numbers) are kept
+    filter_at(
+      # Selecting the columns that start with 'pm25'
+      vars(starts_with("pm25")),
+      # Filtering said columns such that only values 0:2000 are kept
+      all_vars(between(., 0, 2000))
+    ) %>% 
+    filter(
+      # Filtering temperature for -40:185
+      between(temperature, -40, 185),
+      # Filtering humidity for 0:100
+      between(humidity, 0, 100)
+    )
+  
+  return(data_qc)
+}
+```
+
+```{r function_epa}
+apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75){
+  
+  if(by_day == FALSE & by_hour == FALSE){
+    stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.")
+  }
+  if(by_day == TRUE & by_hour == FALSE){
+    print("Grouping by date (24 hour averages, by day) [default]")
+    groupings_drop <- vars(site_id, date, date_hour)
+    groupings <- vars(site_id, date)
+    time_unit <- 24
+  }
+  if(by_day == TRUE & by_hour == TRUE){
+    print("Grouping by date and hour (1 hour averages, by day)")
+    dataset <- dataset %>% 
+      mutate(minute = minute(datetime))
+    groupings_drop <- vars(site_id, date, date_hour, minute)
+    groupings <- vars(site_id, date, date_hour)
+    time_unit <- 60/2
+  }
+  if(by_day == FALSE & by_hour == TRUE){
+    print("Grouping by hour (1 hour averages)")
+    dataset <- dataset %>% 
+      mutate(
+        hour = hour(datetime),
+        minute = minute(datetime)
+      )
+    groupings_drop <- vars(site_id, hour, minute)
+    groupings <- vars(site_id, hour)
+    time_unit <- 60/2
+  }
+  
+  # Calculating the minimum number of data points required to be included in the set
+  count_to_drop <- ceiling(time_unit*(epa_percent/100))
+  
+  # Creating a data frame of groups to be removed due to low data quantity
+  drop_quantity <- dataset %>% 
+    group_by_at(groupings_drop) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    group_by_at(groupings) %>% 
+    count() %>% 
+    filter(n < count_to_drop)
+  
+  print("Values to be dropped via an anti-join due to low data quantity:")
+  print(drop_quantity)
+  
+  drop_ab <- dataset %>% 
+    group_by(site_id, date) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    mutate(
+      # Difference between A & B sensors
+      diff = pm25_cf1_A-pm25_cf1_B,
+      # Percentage difference between A & B sensors
+      per_diff = 100*(abs(pm25_cf1_A-pm25_cf1_B))/((pm25_cf1_A+pm25_cf1_B)/2),
+      drop = case_when(
+        # Will drop the following based on EPA recommendations
+        abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
+        # Fills all other values (the ones to be kept) with 'false'
+        TRUE ~ FALSE
+        )
+      ) %>% 
+    filter(drop == TRUE) %>% 
+    select(site_id, date)
+  
+  print("Days (by sensor) to be dropped via an anti-join due to A & B sensor disagreement:")
+  print(drop_ab)
+  
+  dataset %>% 
+    anti_join(drop_quantity) %>% 
+    anti_join(drop_ab) %>% 
+    group_by_at(groupings) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    rowwise() %>% 
+    mutate(
+      # US-wide correction factor published in 2020
+      epa_2020 = 0.524*pm25_cf1 - 0.0852*humidity + 5.72,
+      # US-wide correction factor published in late 2020
+      epa_2021 = case_when(
+        pm25_cf1 <= 343 ~ 0.52*pm25_cf1 - 0.086*humidity + 5.75,
+        pm25_cf1 > 343 ~ 0.46*pm25_cf1 + (3.93*10^(-4))*(pm25_cf1^2) +2.97
+      ),
+      # US-wide correction factor published in late 2020 using CF=ATM values
+      epa_atm = case_when(
+        pm25_atm < 50 ~ 0.25*pm25_atm - 0.086*humidity + 5.75,
+        pm25_atm >= 50 & pm25_atm < 229 ~ 0.786*pm25_atm - 0.086*humidity + 5.75,
+        pm25_atm > 229 ~ 0.69*pm25_atm + (8.84*10^-4)*(pm25_atm^2) + 2.97
+      )
+    ) %>% 
+    # Setting negative values to NA
+    mutate_at(vars(epa_2020, epa_2021, epa_atm), ~replace(., which(.<0), NA))
+    # # Dropping negative values
+    # filter_at(vars(epa_2020, epa_2021, epa_atm), all_vars(. >= 0))
+}
+```
+
+
+```{r function_lrapa}
+apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE){
+  
+  if(by_day == FALSE & by_hour == FALSE){
+    stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.")
+  }
+  if(by_day == TRUE & by_hour == FALSE){
+    print("Grouping by date (24 hour averages, by day) [DEFAULT]")
+    groupings <- vars(site_id, date)
+  }
+  if(by_day == TRUE & by_hour == TRUE){
+    print("Grouping by date and hour (1 hour averages, by day)")
+    groupings <- vars(site_id, date, date_hour)
+  }
+  if(by_day == FALSE & by_hour == TRUE){
+    print("Grouping by hour (1 hour averages)")
+    groupings <- vars(site_id, hour)
+    dataset <- dataset %>% 
+      mutate(hour = hour(datetime))
+  }
+  
+  dataset %>% 
+    group_by_at(groupings) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    rowwise() %>% 
+    mutate(
+      lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
+      ) %>% 
+    # Setting negative values to NA
+    mutate_at(vars(lrapa), ~replace(., which(.<0), NA))
+    # # Dropping negative values
+    # filter(lrapa >= 0)
+}
+```
+
+```{r function_corrections}
+apply_corrections <- function(data, daily, hourly, epa = 75){
+  epa <- data %>% 
+    apply_epa(by_day = daily, by_hour = hourly, epa_percent = epa)
+  print("EPA corrections applied")
+  
+  lrapa <- data %>% 
+    apply_lrapa(by_day = daily, by_hour = hourly)
+  print("LRAPA corrections applied")
+  
+  df_corr <- epa %>% 
+    full_join(lrapa)
+  print("Data frame of corrected values created")
+  return(df_corr)
+}
+```
+
+```{r function_tag_dates}
+apply_date_tags <- function(dataset,
+                        starts = input_date_starts, ends = input_date_ends, tags = input_date_tags,
+                        date_stamp = "17 Jan 1999"){
+  
+  starts <- as.Date(starts)
+  ends <- as.Date(ends)
+  tags <- factor(tags)
+  date_format <- stamp_date(date_stamp)
+  
+  data_temp <- data.frame(starts, ends, tags) %>% 
+    arrange(starts) %>% 
+    mutate(
+      start_stamp = date_format(starts),
+      end_stamp = date_format(ends),
+      date_tag = fct_inorder(paste0(tags, "\n(", start_stamp, " - ", end_stamp, ")"))
+    ) %>% 
+    pivot_longer(cols = c(starts, ends), values_to = "date") %>% 
+    group_by(date_tag) %>% 
+    complete(date = full_seq(date, 1)) %>% 
+    select(!c(name, tags, start_stamp, end_stamp))
+  
+  dataset %>% 
+    left_join(data_temp) %>% 
+    drop_na(date_tag)
+}
+```
+
+```{r function_tag_hours}
+apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_hour_tags){
+  tags <- factor(tags)
+  
+  hours_in_day <- data.frame(starts = 0:23)
+  
+  data_temp <- data.frame(starts, tags) %>% 
+    mutate(
+      ends = lead(starts - 1),
+      ends = replace_na(ends, starts[1]-1),
+      tags = paste0(tags, "\n(", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
+    ) %>% 
+    arrange(starts) %>% 
+    mutate(hour_tag = fct_inorder(tags)) %>%
+    complete(starts = full_seq(starts, 1)) %>%
+    right_join(hours_in_day) %>%
+    rename(hour = starts) %>%
+    fill(hour_tag) %>%
+    select(!c(tags, ends))# %>%
+    # HR_CHANGES
+    # mutate(hour = hms::as_hms(hour*60*60))
+  # HR_CHANGES
+  
+  if("hour" %in% colnames(dataset) == FALSE){
+    dataset <- dataset %>% 
+      mutate(hour = hour(date_hour))
+    #   # HR_CHANGES
+    #   mutate(
+    #     hour = hour(date_hour),
+    #     hour = hms::as_hms(hour*60*60)
+    #   )
+    # # HR_CHANGES
+  }
+  
+  dataset %>% 
+    left_join(data_temp)
+}
+```
+
+```{r function_applying}
+applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run_date_grouping, tag_hours = run_hour_grouping){
+  
+  # Applying correction factors
+  new_df <- dataframe %>%
+    apply_corrections(daily = group_day, hourly = group_hour)
+  print("Correction factors applied.")
+  
+  # Tagging by date
+  if(tag_dates == TRUE & group_day == TRUE){
+    # tagged_days <- dataframe %>% 
+    #   apply_date_tags() %>% 
+    #   select(date, date_tag)
+    tagged_days <- dataframe %>% 
+      select(date) %>% 
+      distinct() %>% 
+      apply_date_tags() %>% 
+      select(date, date_tag)
+    
+    new_df <- new_df %>% left_join(tagged_days)
+    print("Data now tagged by provided date groupings.")
+  } else {
+    print("Date groups not applied.")
+  }
+  
+  # Tagging by hour
+  if(group_hour == TRUE & tag_hours == TRUE){
+    # tagged_hours <- dataframe %>% 
+    #   apply_hour_tags() %>% 
+    #   select(hour, hour_tag)
+    tagged_hours <- dataframe %>% 
+      select(date_hour) %>% 
+      distinct() %>% 
+      apply_hour_tags() %>% 
+      select(hour, hour_tag) %>% 
+      distinct()
+    
+    if("hour" %in% colnames(new_df) == FALSE){
+      new_df <- new_df %>% 
+        mutate(hour = hour(date_hour))
+    }
+    
+    new_df <- new_df %>% left_join(tagged_hours)
+    print("Data now tagged by provided hour groupings.")
+    
+  } else {
+    print("Hour groups not applied.")
+  }
+  
+  # Returning the adjusted dataframe
+  return(new_df)
+}
+```
+
+```{r data_applying}
+data_hourly <- applying_functions(data_pm25, group_day = TRUE, group_hour = TRUE)
+data_daily <- applying_functions(data_pm25, group_day = TRUE, group_hour = FALSE)
+data_diurnal <- applying_functions(data_pm25, group_day = FALSE, group_hour = TRUE)
+```
+
+```{r eclean_applying, eval=FALSE}
+remove(apply_corrections, applying_functions, apply_epa, apply_lrapa, apply_hour_tags, apply_date_tags)
+```
