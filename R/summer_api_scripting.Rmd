@@ -309,7 +309,6 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
 ```
 
 ```{r function_dt}
-#column_dt <- function(dataset, unit = c("date", "date_hour", "time", "hour")){
 column_dt <- function(dataset, unit){
   
   if (
@@ -887,14 +886,6 @@ data_hourly %>%
   mutate(hour = as.factor(hour)) %>% 
   map_q(value = epa_2021, grouping_var = hour, grouping_var_2 = date_tag, inside=FALSE)
 
-data_hourly %>% filter(site_id != "9c83953c1afae9df_86135") %>% 
-  map_q(value=epa_2021, grouping_var = date_tag, inside=FALSE)
-
-data_hourly %>% 
-  # filter(site_id != "01cff4b431a1862a_26757",
-  #        site_id != "65b3dca6d412ed31_55407") %>% 
-  map_q(value = epa_2021, grouping_var_2 = hour_tag, grouping_var = date_tag, exclude = c("Before", "Fire"))
-
 map_q(data_daily, value = epa_2020, grouping_var = date_tag, inside = FALSE)
 
 map_q(data_daily, value = lrapa, grouping_var = date_tag, exclude = "Fire")
@@ -1095,8 +1086,8 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
 
 ```{r test_heatmap_single, eval=FALSE}
 heatmap_single(data_hourly, "Rose City", epa_2021)
-heatmap_single(data_hourly, "STAR", temperature)
-heatmap_single(data_hourly, "Rose City", humidity)
+heatmap_single(data_hourly, "Benson 1", humidity)
+heatmap_single(data_hourly, "Edgewater", temperature)
 ```
 
 ```{r viz_function_heatmap}
@@ -1165,9 +1156,9 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   
   # If manually applying a max filter value
   if(is.na(filter_max) == FALSE){
+    # Replacing the values above the set max to be NA so that they will be colored differently on the map
     dataset <- dataset %>% 
       mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>{{filter_max}}), NA))
-      #filter({{variable_of_interest}} <= {{filter_max}})
     
     # Updated lab caption to include the filter
     lab_caption <- paste0(lab_caption, "\nColor scale manually capped at ", filter_max, "; all higher values colored ", max_color, ".")
