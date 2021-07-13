@@ -37,17 +37,22 @@ input_deq_renames <- c(
 ```{r data_import}
 
 # Creating a list of variable names
-data_deq_names <- read_excel(input_deq_path,
+deq_names <- read_excel(input_deq_path,
                              sheet = 1, # Selecting sheet 1
                              skip = 2, # Skipping the empty rows at the top
                              n_max = 0) %>% names() # Selecting 0 observations, and extracting the names only
 
+# All DEQ data aside from time stamps is numeric
+# To avoid R from identifying columns with lots of missing data as logical, all columns except date time are set to numeric:
+deq_coltypes <- ifelse(grepl("Date Time", deq_names), "text", "numeric")
+
 # Creating a data frame of the data
-data_deq_raw <- read_excel(input_deq_path,
+raw_deq <- read_excel(input_deq_path,
                            sheet = 1, # Selecting sheet 1
                            skip = 4, # Skipping the topmost rows naming the variables, etc
                            na = "----", # NAs are reported using this symbol in the Excel file
-                           col_names = data_deq_names) # setting column names to be those listed above
+                           col_names = deq_names, # Setting column names to be those listed above
+                           col_types = deq_coltypes) # Setting column types
 
 # Data frame of units, for reference if needed.
 deq_units <- read_excel(input_deq_path,
@@ -57,27 +62,32 @@ deq_units <- read_excel(input_deq_path,
 ```
 
 ```{r eclean_read}
-remove(data_deq_names, deq_units)
+remove(deq_names, deq_coltypes, deq_units, input_deq_path)
 ```
 
 
 ```{r data_wrangling}
-data_deq <- data_deq_raw %>% 
+data_deq <- raw_deq %>% 
   mutate(
-    # DEQ reports time stamps in STANDARD time, meaning DST is not accounted for.
-    # Using Etc/GMT+8 here will apply the appropriate -8
+    # DEQ reports time stamps in Pacific Standard Time, meaning DST is NOT accounted for.
+    # Using Etc/GMT+8 here will mark the time stamps as the appropriate -8 ("PST")
     datetime_standard = parse_date_time(`Date Time`, "%H:%M %m/%d/%Y", tz = "Etc/GMT+8"),
     # The following will adjust time stamps for DST appropriately:
-    `Date Time` = with_tz(datetime_standard, tzone = "America/Los_Angeles"),
-    date = date(`Date Time`)
+    `Date Time` = with_tz(datetime_standard, tzone = "America/Los_Angeles")
   ) %>% 
   rename(date_hour = `Date Time`) %>% 
   # Renaming variables based on inputs at the top
   plyr::rename(warn_missing = FALSE, input_deq_renames) %>% 
   # Selecting only renamed variables in addition to time stamps
-  select(c(date, date_hour, intersect(all_of(input_deq_renames), names(.)), datetime_standard))
+  select(c(date_hour, intersect(all_of(input_deq_renames), names(.)), datetime_standard))
+
+# Converting deg Ç (units in which DEQ reports) to deg F (units in which PA reports)
+if ("temperature_c" %in% colnames(data_deq) == TRUE) {
+  data_deq <- data_deq %>% 
+    mutate("temeprature" = (temperature_c*(9/5))+32)
+}
 ```
 
 ```{r eclean_wrangle}
-remove(data_deq_raw, input_deq_path, input_deq_renames)
+remove(input_deq_renames)
 ```

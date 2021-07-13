@@ -1106,11 +1106,16 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = max_color)
   
   # Adjusting color scale and labels if the variable of interest is internal temperature
-  if(str_detect(deparse(substitute(variable_of_interest)), "temp") == TRUE){
+  if(str_detect(deparse(substitute(variable_of_interest)), "temperature") == TRUE){
     lab_title <- paste("Heatmap of internal temperature values across time")
-    lab_fill <- "Internal temperature (\u00B0F):"
     fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
     print("Temperature detected as variable of interest; adjusting labels accordingly")
+    lab_fill <- "Internal temperature (\u00B0F):"
+    
+    if(str_detect(deparse(substitute(variable_of_interest)), "temperature_c") == TRUE) {
+      lab_fill <- "Internal temperature (\u00B0C):"
+      print("Temperature detected to be in Celsius")
+    }
   }
   # Adjusting color scale and labels if the variable of interest is RH
   if(str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE |
