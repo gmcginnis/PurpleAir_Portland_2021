@@ -45,7 +45,7 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
 }
 ```
 
-```{r}
+```{r function_dt}
 #column_dt <- function(dataset, unit = c("date", "date_hour", "time", "hour")){
 column_dt <- function(dataset, unit){
   
@@ -169,7 +169,7 @@ data_pm25 <- raw_data %>%
 remove(apply_qc, adjust_timezone)
 ```
 
-```{r}
+```{r function_epa}
 apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75, keep_cols = FALSE) {
   
   if (by_day == FALSE & by_hour == FALSE) { stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.") }
@@ -234,7 +234,7 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75,
       drop = case_when(
         # Will drop the following based on EPA recommendations
         abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
-        # Fills all other values (the ones to be kept) with 'false'
+        # Fills all other values (the ones to be kept) with 'FALSE'
         TRUE ~ FALSE
         )
       ) %>% 
@@ -278,7 +278,7 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75,
 }
 ```
 
-```{r}
+```{r function_lrapa}
 apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE, keep_cols = FALSE) {
   
   if (by_day == FALSE & by_hour == FALSE) {
@@ -286,17 +286,17 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE, keep_cols = FAL
   }
   if (by_day == TRUE & by_hour == FALSE) {
     print("Grouping by date (24 hour averages, by day) [DEFAULT]")
-    dataset <- column_dt(dataset, "date")
+    dataset <- dataset %>% column_dt("date")
     groupings <- vars(site_id, date)
   }
   if (by_day == TRUE & by_hour == TRUE) {
     print("Grouping by date and hour (1 hour averages, by day)")
-    dataset <- column_dt(dataset, c("date_hour"))
+    dataset <- dataset %>% column_dt("date_hour")
     groupings <- vars(site_id, date_hour)
   }
   if (by_day == FALSE & by_hour == TRUE) {
     print("Grouping by hour (1 hour averages)")
-    dataset <- column_dt(dataset, "hour")
+    dataset <- dataset %>% column_dt("hour")
     groupings <- vars(site_id, hour)
   }
   
@@ -320,7 +320,7 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE, keep_cols = FAL
 }
 ```
 
-```{r}
+```{r function_corrections}
 apply_corrections <- function(dataset, daily = TRUE, hourly = FALSE, epa = 75){
   epa <- apply_epa(dataset, by_day = daily, by_hour = hourly, epa_percent = epa, keep_cols = TRUE)
   print("EPA corrections applied")
@@ -422,7 +422,7 @@ apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_ho
 }
 ```
 
-```{r applying}
+```{r function_applying}
 #HERE
 apply_functions <- function (dataset, by_day = TRUE, by_hour = FALSE, tag_dates = run_date_grouping, tag_hours = run_hour_grouping) {
  

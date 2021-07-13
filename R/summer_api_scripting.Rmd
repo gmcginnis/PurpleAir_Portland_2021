@@ -250,7 +250,14 @@ for (id in ids[1:id_count]) {
   # Cleaning environment
   remove(data_a_single, data_b_single, pat_single, raw_meta_single)
 }
+```
 
+```{r eclean_iteration}
+remove(count, id, id_count, ids, input_baseUrl, input_cols_to_select, date_sequence)
+```
+
+
+```{r pat_joining}
 # Joining data frames
 raw_data <- full_join(data_a, data_b, # Data sets to join
                       by = c("created_at", "site_id"), # Columns to unite
@@ -268,8 +275,8 @@ raw_data <- full_join(data_a, data_b, # Data sets to join
 print(sprintf("Successfully created %d/%d pat objects.", length(unique(raw_data$site_id)), id_count))
 ```
 
-```{r eclean_iteration}
-remove(count, id, id_count, ids, input_baseUrl, input_cols_to_select, date_sequence)
+
+```{r eclean_joining}
 # Already have both saved in raw_data
 remove(data_a, data_b)
 ```
@@ -280,7 +287,7 @@ remove(data_a, data_b)
 adjust_timezone <- function(dataset, location_data = raw_meta){
   
   # Translation: If more than 1 unique timezone is reported in the data frame, then:
-  if(length(unique(location_data$timezone)) > 1){
+  if (length(unique(location_data$timezone)) > 1) {
   print("Multiple time zones reported. Timestamp will be based on the most frequent time zone reported.")
   timezone <- (location_data %>% 
                  group_by(timezone) %>% 
@@ -291,98 +298,84 @@ adjust_timezone <- function(dataset, location_data = raw_meta){
     timezone <- unique(location_data$timezone)
   }
   
-  dataset_new <- dataset %>%
+  dataset <- dataset %>%
     # Original time stamps (in UTC) will be preserved
     rename(datetime_utc = datetime) %>% 
-    # # Creating variables for date and hour
-    # mutate(
-    #   datetime = with_tz(datetime_utc, tzone = timezone),
-    #   date = date(datetime),
-    #   date_hour = floor_date(datetime, unit = "hour")
-    # )
-    # HR_TESTING
-    mutate(
-      datetime = with_tz(datetime_utc, tzone = timezone),
-      date = date(datetime),
-      time = hms::as_hms(datetime),
-      date_hour = floor_date(datetime, unit = "hour"),
-      hour = hms::as_hms(date_hour)
-    )
+    mutate(datetime = with_tz(datetime_utc, tzone = timezone))
   
   print(paste("Time zone applied:", timezone))
-  return(dataset_new)
+  return(dataset)
 }
 ```
 
-```{r hour_testing, eval=FALSE}
-#lims <- as.POSIXct(strptime(c("1970-01-01 00:00","1970-01-01 23:00"), format = "%Y-%m-%d %H:%M"))
-starts <- input_hour_starts
-tags <- factor(input_hour_tags)
-
-hours_in_day <- data.frame(starts = 0:23)
-
-new_hour <- data.frame(starts, tags) %>% 
-  mutate(
-    ends = lead(starts - 1),
-    ends = replace_na(ends, starts[1]-1),
-    tags = paste0(tags, "\n(", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
-  ) %>% 
-  arrange(starts) %>% 
-  mutate(hour_tag = fct_inorder(tags)) %>%
-  complete(starts = full_seq(starts, 1)) %>%
-  right_join(hours_in_day) %>%
-  rename(hour = starts) %>%
-  fill(hour_tag) %>%
-  select(!c(tags, ends)) %>% 
-  mutate(hour = hms::as_hms(hour*60*60))
-
-dat %>% left_join(new_hour)
-
-data_temp <- data.frame(starts, tags) %>% 
-  mutate(
-    ends = lead(starts - 1),
-    ends = replace_na(ends, starts[1]-1),
-    tags = paste0(tags, "\n(", formatC(starts, width=2, flag=0), ":00-", formatC(ends, width=2, flag=0), ":59)")
-  ) %>% 
-  arrange(starts) %>% 
-  mutate(hour_tag = fct_inorder(tags)) %>%
-  complete(starts = full_seq(starts, 1)) %>%
-  right_join(hours_in_day) %>%
-  rename(hour = starts) %>%
-  fill(hour_tag) %>%
-  select(!c(tags, ends))
-
-
-dat <- raw_data %>% 
-  filter(site_id==id) %>% 
-  mutate(
-    hr = hour(datetime),
-    time = hms::as_hms(datetime),
-    # sec_round = hms::round_hms(time, 60*60),
-    # round = hms::as_hms(round(datetime, units  = "hours")),
-    hour = hms::as_hms(hour(datetime)*60*60)
-    # hour = as_datetime(hour)
-    #hrrr = hms::round_hms(time, 60*60)
-  ) %>% 
-  group_by(hour) %>% 
-  summarize(mean = mean(temperature, na.rm = TRUE))
-
-lims <- c(min(dat$hour), max(dat$hour))
-
-ggplot(dat, aes(x = hour, y = mean)) +
-  geom_point() +
-  scale_x_datetime(breaks = "1 hour",
-    #breaks = scales::date_breaks("1 hour"),
-                   date_labels = "%H:%M",
-    #expand = c(0,0)
-    expand = expansion(mult = c(0.01, 0.01))
-                   #limits = lims
-                   ) +
-  theme(axis.text.x = element_text(angle = 30))
-  #scale_x_time(breaks = scales::breaks_width("1 hour"))
-  #scale_x_time(breaks = scales::breaks_width("1 hour"), labels = scales::label_time(format="%H:%M"))
+```{r function_dt}
+#column_dt <- function(dataset, unit = c("date", "date_hour", "time", "hour")){
+column_dt <- function(dataset, unit){
+  
+  if (
+    "datetime" %in% colnames(dataset) == FALSE &
+    "date_hour" %in% colnames(dataset) == FALSE
+    ) { stop("ERROR: columns `datetime` and `date_hour` not found in dataset. Execusion halted.") }
+  
+  for (i in unit) {
+    if (i %in% c("date", "date_hour", "hour", "hour_minute", "time") == FALSE) {
+      stop(paste0("Unrecognized unit: \`", i, "\`. Please use `date`, `date_hour`, `hour`, `hour_minute`, or `time`."))
+    }
+  }
+  
+  if ("date" %in% unit) {
+    if ("date_hour" %in% colnames(dataset) == TRUE) {
+      dataset <- dataset %>% 
+        mutate(date = date(date_hour))
+      print("`date` column added from `date_hour`")
+    } else {
+      dataset <- dataset %>%
+        mutate(date = date(datetime))
+      print("`date` column added")
+    }
+  }
+  
+  if ("date_hour" %in% unit) {
+    dataset <- dataset %>% 
+      mutate(date_hour = floor_date(datetime, unit = "hour"))
+    print("`date_hour` column added")
+  }
+  
+  if ("time" %in% unit) {
+    dataset <- dataset %>% 
+      mutate(time = hms::as_hms(datetime))
+    print("`time` column added")
+  }
+  
+  if ("hour" %in% unit) {
+    if ("date_hour" %in% colnames(dataset) == TRUE) {
+      dataset <- dataset %>% 
+        mutate(hour = hms::as_hms(date_hour))
+      print("`hour` column added")
+    } else {
+      dataset <- dataset %>% 
+        mutate(
+          date_hour = floor_date(datetime, unit = "hour"),
+          hour = hms::as_hms(date_hour)
+        ) %>% 
+        select(!date_hour)
+      print("`hour` column added, `date_hour` column created then disgarded")
+    }
+  }
+  
+  if ("hour_minute" %in% unit) {
+    dataset <- dataset %>%
+      mutate(
+        date_minute = floor_date(datetime, unit = "minute"),
+        hour_minute = hms::as_hms(date_minute)
+      ) %>%
+      select(!date_minute)
+    print("`hour_minute` column added, `date_minute` column created then disgarded")
+  }
+  
+  return(dataset)
+}
 ```
-
 
 ```{r function_qc}
 apply_qc <- function(dataset, avg_ab = TRUE){
@@ -399,7 +392,7 @@ apply_qc <- function(dataset, avg_ab = TRUE){
     print("Columns for averages of A & B data added")
   }
   
-  data_qc <- dataset %>% 
+  dataset <- dataset %>% 
     # Basic quality control; only physically possible values (and real numbers) are kept
     filter_at(
       # Selecting the columns that start with 'pm25'
@@ -414,7 +407,7 @@ apply_qc <- function(dataset, avg_ab = TRUE){
       between(humidity, 0, 100)
     )
   
-  return(data_qc)
+  return(dataset)
 }
 ```
 
@@ -431,7 +424,7 @@ data_pm25 <- raw_data %>%
   # Adjusting to be reported time zone (see above function)
   adjust_timezone() %>% 
   # Reordering variables for ease of reading
-  select(site_id, datetime, date, date_hour, everything())
+  select(site_id, datetime, everything())
 ```
 
 ```{r eclean_qc, eval=FALSE}
@@ -439,34 +432,39 @@ remove(apply_qc, adjust_timezone)
 ```
 
 ```{r function_epa}
-apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75){
+apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75, keep_cols = FALSE) {
   
-  if(by_day == FALSE & by_hour == FALSE){
-    stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.")
-  }
-  if(by_day == TRUE & by_hour == FALSE){
+  if (by_day == FALSE & by_hour == FALSE) { stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.") }
+  
+  if (by_day == TRUE & by_hour == FALSE) {
     print("Grouping by date (24 hour averages, by day) [default]")
+    
+    dataset_stamped <- dataset %>% 
+      column_dt(c("date", "date_hour"))
+    
     groupings_drop <- vars(site_id, date, date_hour)
     groupings <- vars(site_id, date)
     time_unit <- 24
   }
-  if(by_day == TRUE & by_hour == TRUE){
+  if (by_day == TRUE & by_hour == TRUE) {
     print("Grouping by date and hour (1 hour averages, by day)")
-    dataset <- dataset %>% 
-      mutate(minute = minute(datetime))
-    groupings_drop <- vars(site_id, date, date_hour, minute)
-    groupings <- vars(site_id, date, date_hour)
+    
+    dataset_stamped <- dataset %>% 
+      column_dt(c("date_hour", "hour_minute"))
+
+    groupings_drop <- vars(site_id, date_hour, hour_minute)
+    groupings <- vars(site_id, date_hour)
     time_unit <- 60/2
   }
-  if(by_day == FALSE & by_hour == TRUE){
+  if (by_day == FALSE & by_hour == TRUE) {
     print("Grouping by hour (1 hour averages)")
-    dataset <- dataset %>% 
-      mutate(
-        hour = hour(datetime),
-        minute = minute(datetime)
-      )
-    groupings_drop <- vars(site_id, hour, minute)
+    
+    dataset_stamped <- dataset %>% 
+      column_dt(c("hour", "hour_minute"))
+    
+    groupings_drop <- vars(site_id, hour, hour_minute)
     groupings <- vars(site_id, hour)
+    
     time_unit <- 60/2
   }
   
@@ -474,17 +472,20 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
   count_to_drop <- ceiling(time_unit*(epa_percent/100))
   
   # Creating a data frame of groups to be removed due to low data quantity
-  drop_quantity <- dataset %>% 
+  drop_quantity <- dataset_stamped %>% 
     group_by_at(groupings_drop) %>% 
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
     group_by_at(groupings) %>% 
     count() %>% 
-    filter(n < count_to_drop)
+    filter(n < count_to_drop) %>% 
+    arrange(n)
   
   print("Values to be dropped via an anti-join due to low data quantity:")
   print(drop_quantity)
   
   drop_ab <- dataset %>% 
+    select(!intersect(c("temperature", "humidity", "pm25_cf1", "pm25_atm"), colnames(.))) %>% 
+    column_dt("date") %>% 
     group_by(site_id, date) %>% 
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
     mutate(
@@ -495,7 +496,7 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
       drop = case_when(
         # Will drop the following based on EPA recommendations
         abs(diff) >= 5 & abs(per_diff) >= 62 ~ TRUE,
-        # Fills all other values (the ones to be kept) with 'false'
+        # Fills all other values (the ones to be kept) with 'FALSE'
         TRUE ~ FALSE
         )
       ) %>% 
@@ -505,7 +506,7 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
   print("Days (by sensor) to be dropped via an anti-join due to A & B sensor disagreement:")
   print(drop_ab)
   
-  dataset %>% 
+  dataset_stamped <- dataset_stamped %>% 
     anti_join(drop_quantity) %>% 
     anti_join(drop_ab) %>% 
     group_by_at(groupings) %>% 
@@ -528,33 +529,40 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75)
     ) %>% 
     # Setting negative values to NA
     mutate_at(vars(epa_2020, epa_2021, epa_atm), ~replace(., which(.<0), NA))
-    # # Dropping negative values
-    # filter_at(vars(epa_2020, epa_2021, epa_atm), all_vars(. >= 0))
+  
+  if (keep_cols == FALSE) {
+    print("Dropping extraneous columns [default]")
+    dataset_stamped <- dataset_stamped %>% 
+      select(!intersect(c("temperature", "humidity", "pm25_cf1_A", "pm25_atm_A", "pm25_cf1_B", "pm25_atm_B", "pm25_cf1", "pm25_atm"), colnames(.)))
+  } else { print("Keeping all columns") }
+  
+  return(dataset_stamped)
 }
 ```
 
 ```{r function_lrapa}
-apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE){
+apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE, keep_cols = FALSE) {
   
-  if(by_day == FALSE & by_hour == FALSE){
+  if (by_day == FALSE & by_hour == FALSE) {
     stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.")
   }
-  if(by_day == TRUE & by_hour == FALSE){
+  if (by_day == TRUE & by_hour == FALSE) {
     print("Grouping by date (24 hour averages, by day) [DEFAULT]")
+    dataset <- dataset %>% column_dt("date")
     groupings <- vars(site_id, date)
   }
-  if(by_day == TRUE & by_hour == TRUE){
+  if (by_day == TRUE & by_hour == TRUE) {
     print("Grouping by date and hour (1 hour averages, by day)")
-    groupings <- vars(site_id, date, date_hour)
+    dataset <- dataset %>% column_dt("date_hour")
+    groupings <- vars(site_id, date_hour)
   }
-  if(by_day == FALSE & by_hour == TRUE){
+  if (by_day == FALSE & by_hour == TRUE) {
     print("Grouping by hour (1 hour averages)")
+    dataset <- dataset %>% column_dt("hour")
     groupings <- vars(site_id, hour)
-    dataset <- dataset %>% 
-      mutate(hour = hour(datetime))
   }
   
-  dataset %>% 
+  dataset <- dataset %>% 
     group_by_at(groupings) %>% 
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
     rowwise() %>% 
@@ -563,25 +571,27 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE){
       ) %>% 
     # Setting negative values to NA
     mutate_at(vars(lrapa), ~replace(., which(.<0), NA))
-    # # Dropping negative values
-    # filter(lrapa >= 0)
+  
+  if (keep_cols == FALSE) {
+    print("Dropping extraneous columns [default]")
+    dataset <- dataset %>% 
+      select(!intersect(c("temperature", "humidity", "pm25_cf1_A", "pm25_atm_A", "pm25_cf1_B", "pm25_atm_B", "pm25_cf1", "pm25_atm"), colnames(.)))
+  } else { print("Keeping all columns") }
+  
+  return(dataset)
 }
 ```
 
 ```{r function_corrections}
-apply_corrections <- function(data, daily, hourly, epa = 75){
-  epa <- data %>% 
-    apply_epa(by_day = daily, by_hour = hourly, epa_percent = epa)
+apply_corrections <- function(dataset, daily = TRUE, hourly = FALSE, epa = 75){
+  epa <- apply_epa(dataset, by_day = daily, by_hour = hourly, epa_percent = epa, keep_cols = TRUE)
   print("EPA corrections applied")
-  
-  lrapa <- data %>% 
-    apply_lrapa(by_day = daily, by_hour = hourly)
+  lrapa <- apply_lrapa(dataset, by_day = daily, by_hour = hourly, keep_cols = TRUE)
   print("LRAPA corrections applied")
   
-  df_corr <- epa %>% 
-    full_join(lrapa)
+  dataset_corrected <- full_join(epa, lrapa)
   print("Data frame of corrected values created")
-  return(df_corr)
+  return(dataset_corrected)
 }
 ```
 
@@ -607,14 +617,42 @@ apply_date_tags <- function(dataset,
     complete(date = full_seq(date, 1)) %>% 
     select(!c(name, tags, start_stamp, end_stamp))
   
-  dataset %>% 
+  remove_date <- FALSE
+  
+  if ("date" %in% colnames(dataset) == FALSE) {
+    print("`date` column not detected; temporarily adding to dataframe")
+    dataset <- column_dt(dataset, "date")
+    remove_date <- TRUE
+  }
+  
+  dataset <- dataset %>% 
     left_join(data_temp) %>% 
     drop_na(date_tag)
+  
+  if (remove_date == TRUE) {
+    dataset <- select(dataset, !date)
+    print("Temporary `date` column removed")
+  }
+  
+  return(dataset)
 }
 ```
 
+
 ```{r function_tag_hours}
 apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_hour_tags){
+  
+  
+  if ("hour" %in% colnames(dataset) == FALSE & "date_hour" %in% colnames(dataset) == FALSE) {
+    stop("Data set does not contain hours. Execution halted.")
+  }
+  
+  if ("hour" %in% colnames(dataset) == FALSE) {
+    print("`hour` column not detected; temporarily adding to dataframe")
+    dataset <- column_dt(dataset, "hour")
+    remove_hour <- TRUE
+  } else { remove_hour <- FALSE }
+  
   tags <- factor(tags)
   
   hours_in_day <- data.frame(starts = 0:23)
@@ -631,89 +669,53 @@ apply_hour_tags <- function(dataset, starts = input_hour_starts, tags = input_ho
     right_join(hours_in_day) %>%
     rename(hour = starts) %>%
     fill(hour_tag) %>%
-    select(!c(tags, ends))# %>%
-    # HR_CHANGES
-    # mutate(hour = hms::as_hms(hour*60*60))
-  # HR_CHANGES
+    select(!c(tags, ends)) %>%
+    mutate(hour = hms::as_hms(hour*60*60))
   
-  if("hour" %in% colnames(dataset) == FALSE){
-    dataset <- dataset %>% 
-      mutate(hour = hour(date_hour))
-    #   # HR_CHANGES
-    #   mutate(
-    #     hour = hour(date_hour),
-    #     hour = hms::as_hms(hour*60*60)
-    #   )
-    # # HR_CHANGES
+  dataset <- dataset %>% 
+    left_join(data_temp)
+  
+  if (remove_hour == TRUE) {
+    dataset <- select(dataset, !hour)
+    print("Temporary `hour` column removed")
   }
   
-  dataset %>% 
-    left_join(data_temp)
+  return(dataset)
 }
 ```
 
 ```{r function_applying}
-applying_functions <- function(dataframe, group_day, group_hour, tag_dates = run_date_grouping, tag_hours = run_hour_grouping){
-  
-  # Applying correction factors
-  new_df <- dataframe %>%
-    apply_corrections(daily = group_day, hourly = group_hour)
+apply_functions <- function (dataset, by_day = TRUE, by_hour = FALSE, tag_dates = run_date_grouping, tag_hours = run_hour_grouping) {
+ 
+  dataset <- apply_corrections(dataset, daily = by_day, hourly = by_hour)
   print("Correction factors applied.")
   
-  # Tagging by date
-  if(tag_dates == TRUE & group_day == TRUE){
-    # tagged_days <- dataframe %>% 
-    #   apply_date_tags() %>% 
-    #   select(date, date_tag)
-    tagged_days <- dataframe %>% 
-      select(date) %>% 
-      distinct() %>% 
-      apply_date_tags() %>% 
-      select(date, date_tag)
-    
-    new_df <- new_df %>% left_join(tagged_days)
-    print("Data now tagged by provided date groupings.")
+  if(by_day == TRUE & tag_dates == TRUE) {
+    dataset <- apply_date_tags(dataset)
+    print("Data now tagged by provided date groupings")
   } else {
-    print("Date groups not applied.")
+    print("Date groups not applied")
   }
   
-  # Tagging by hour
-  if(group_hour == TRUE & tag_hours == TRUE){
-    # tagged_hours <- dataframe %>% 
-    #   apply_hour_tags() %>% 
-    #   select(hour, hour_tag)
-    tagged_hours <- dataframe %>% 
-      select(date_hour) %>% 
-      distinct() %>% 
-      apply_hour_tags() %>% 
-      select(hour, hour_tag) %>% 
-      distinct()
-    
-    if("hour" %in% colnames(new_df) == FALSE){
-      new_df <- new_df %>% 
-        mutate(hour = hour(date_hour))
-    }
-    
-    new_df <- new_df %>% left_join(tagged_hours)
-    print("Data now tagged by provided hour groupings.")
-    
+  if(by_hour == TRUE & tag_hours == TRUE) {
+    dataset <- apply_hour_tags(dataset)
+    print("Data now tagged by provided hour groupings")
   } else {
-    print("Hour groups not applied.")
+    print("Hour groups not applied")
   }
   
-  # Returning the adjusted dataframe
-  return(new_df)
+  return(dataset)
 }
 ```
 
 ```{r data_applying}
-data_hourly <- applying_functions(data_pm25, group_day = TRUE, group_hour = TRUE)
-data_daily <- applying_functions(data_pm25, group_day = TRUE, group_hour = FALSE)
-data_diurnal <- applying_functions(data_pm25, group_day = FALSE, group_hour = TRUE)
+data_hourly <- apply_functions(data_pm25, by_day = TRUE, by_hour = TRUE)
+data_daily <- apply_functions(data_pm25, by_day = TRUE, by_hour = FALSE)
+data_diurnal <- apply_functions(data_pm25, by_day = FALSE, by_hour = TRUE)
 ```
 
 ```{r eclean_applying, eval=FALSE}
-remove(apply_corrections, applying_functions, apply_epa, apply_lrapa, apply_hour_tags, apply_date_tags)
+remove(apply_corrections, apply_functions, apply_epa, apply_lrapa, apply_hour_tags, apply_date_tags)
 ```
 
 ```{r viz_function_map}
@@ -881,6 +883,8 @@ map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
 
 data_hourly %>% 
   filter(site_id != "9c83953c1afae9df_86135") %>% 
+  column_dt("hour") %>% 
+  mutate(hour = as.factor(hour)) %>% 
   map_q(value = epa_2021, grouping_var = hour, grouping_var_2 = date_tag, inside=FALSE)
 
 data_hourly %>% filter(site_id != "9c83953c1afae9df_86135") %>% 
@@ -992,6 +996,103 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
 }
 ```
 
+```{r viz_function_single_heatmap}
+heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
+                           digits = 2, location_data = data_meta){
+  
+  if ("date_hour" %in% colnames(dataset) == FALSE) { stop("ERROR: Inputted data set is not hourly by day") }
+  
+  if (deparse(substitute(variable_of_interest)) %in% colnames(dataset) == FALSE) {
+    dataset %>%
+      slice(1) %>%
+      ungroup() %>%
+      select_if(is.numeric) %>%
+      colnames() %>%
+      print()
+    stop("ERROR: Inputted variable of interest is not in the provided data set. Execution halted. Valid inputs are listed above")
+  }
+  
+  temp_loc <- location_data %>% 
+    select(site_id, label)
+  
+  temp_df <- dataset %>% 
+    ungroup() %>% 
+    # Adding labels to the data set
+    left_join(temp_loc) %>% 
+    # Filtering data set based on inputted site of interest
+    filter(str_detect(label, site_of_interest)) %>% 
+    # Removing empty values from variable of interest (otherwise is grey when mapping)
+    drop_na({{variable_of_interest}}) %>% 
+    # Removing duplicate rows
+    distinct()
+  
+  # Verification that only one monitor is selected. Execution will halt if 0 or >1 are detected
+  if(length(unique(temp_df$label)) == 0){
+    stop("ERROR: No monitors selected. Please verify that a distinct label was provided. Capitalization matters.")
+  }
+  if(length(unique(temp_df$label)) > 1){
+    print("Matching locations from meta data:")
+    temp_loc %>% filter(str_detect(label, site_of_interest)) %>% distinct() %>% pull(label) %>% print()
+    print("Matching locations that contain values of interest:")
+    temp_df %>% pull(label) %>% unique() %>% print()
+    stop("ERROR: More than one site selected. Please use a more precise string argument; matching values are listed above.")
+  }
+  
+  
+  lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
+  lab_subtitle <- paste0("Data from PurpleAir. Monitor selected: \"", unique(temp_df$label),
+                        "\". Data plotted: ", deparse(substitute(variable_of_interest)))
+  lab_fill <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA))
+  
+  if(str_detect(deparse(substitute(variable_of_interest)), "temp") == TRUE){
+    lab_title <- paste("Heatmap of internal temperature values across time")
+    lab_fill <- "Internal temperature (\u00B0F):"
+    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
+    print("Temperature detected as variable of interest; adjusting labels accordingly")
+  }
+  if(str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE |
+     deparse(substitute(variable_of_interest)) == "rh"){
+    lab_title <- paste("Heatmap of RH values across time")
+    lab_fill <- "Relative humidity (%):"
+    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.95, begin = 0.15)
+    print("RH detected as variable of interest; adjusting labels accordingly")
+  }
+  
+  # Allows for ending 0 when rounding
+  label_digits <- paste0("%.", deparse(substitute(digits)), "f")
+  
+  # Plotting data
+  temp_df %>% 
+    ggplot(aes(x = date(date_hour),
+               y = hour(date_hour),
+               fill = {{variable_of_interest}},
+               label = as.character(sprintf(label_digits, round({{variable_of_interest}}, digits = digits)))
+    )) +
+    geom_tile() +
+    fill_colors +
+    geom_text() +
+    # Setting scale breaks such that 0:23 will always display, regardless of data availability
+    scale_y_continuous(trans = "reverse", # Reverse such that morning is at top, night at bottom
+                       labels = function(x) sprintf("%02d:00", x), # labeling with proper hourly formatting
+                       breaks = 0:23, # breaks every hour
+                       limits = c(24,-1)) +
+    scale_x_date(breaks = "1 day", date_labels = "%d %b %Y") +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      panel.grid = element_blank(),
+      axis.title.x = element_blank()
+    ) +
+    labs(
+      title = lab_title,
+      subtitle = lab_subtitle,
+      fill = lab_fill,
+      y = "Hour of the day"
+    )
+}
+```
+
 ```{r test_heatmap_single, eval=FALSE}
 heatmap_single(data_hourly, "Rose City", epa_2021)
 heatmap_single(data_hourly, "STAR", temperature)
@@ -999,8 +1100,43 @@ heatmap_single(data_hourly, "Rose City", humidity)
 ```
 
 ```{r viz_function_heatmap}
-heatmap_cross <- function(dataset, variable_of_interest, filter_max = NA,
-                          location_data = data_meta, digits = 2){
+heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE,
+                          filter_max = NA, max_color = red,
+                          location_data = data_meta, digits = 2,
+                          start_date = input_startdate, end_date = input_enddate){
+  
+  # Dropping NA values from the variable of interest (will appear as gaps if viewing the complete viz)
+  dataset <- dataset %>% 
+    drop_na({{variable_of_interest}})
+  
+  if (drop_incomplete == TRUE) {
+    # Number of values expected for a complete set
+    complete_num <- (dataset %>% 
+                       ungroup() %>% 
+                       count(site_id) %>% 
+                       arrange(desc(n)) %>% 
+                       pull(n))[1]
+    
+    # List of monitors with incomplete sets
+    to_drop <- dataset %>% 
+      ungroup() %>% 
+      count(site_id) %>% 
+      filter(n != complete_num) %>% 
+      pull(site_id)
+    
+    # Feedback
+    print("Monitors with incomplete temporal data that will be dropped:")
+    print(paste(to_drop))
+    
+    # Removing incomplete monitors
+    dataset <- dataset %>% 
+      filter(!site_id %in% to_drop)
+    
+  } else {print("All monitors will be plotted.")}
+  
+  # Adding quotation marks; removing extra pairs as needed
+  max_color <- deparse(substitute(max_color)) %>% str_replace_all("\\\"", "")
+  
   # Location data
   temp_loc <- location_data %>% 
     # Arranging such that northern-most monitors will be on top
@@ -1010,35 +1146,50 @@ heatmap_cross <- function(dataset, variable_of_interest, filter_max = NA,
   
   # Default plot labels
   lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
-  lab_subtitle <- paste("Data from PurpleAir. Data plotted:", deparse(substitute(variable_of_interest)))
+  lab_subtitle <- paste("PurpleAir data from", start_date, "to", end_date)
   lab_fill <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
   
   # Getting min and max values from the data set
   val_min <- min(dataset[,deparse(substitute(variable_of_interest))], na.rm=TRUE)
   val_max <- max(dataset[,deparse(substitute(variable_of_interest))], na.rm=TRUE)
   
-  lab_caption <- paste("Data ranges from",
+  lab_caption <- paste0("Variable plotted: ",
+                       deparse(substitute(variable_of_interest)),
+                       ", with a range from ",
                        round(val_min, digits = digits),
-                       "to",
+                       " to ",
                        round(val_max, digits = digits))
+  
+  cap_color <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                      color = "none")
   
   # If manually applying a max filter value
   if(is.na(filter_max) == FALSE){
     dataset <- dataset %>% 
-      filter({{variable_of_interest}} <= {{filter_max}})
+      mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>{{filter_max}}), NA))
+      #filter({{variable_of_interest}} <= {{filter_max}})
     
     # Updated lab caption to include the filter
-    lab_caption <- paste0(lab_caption, "\nColor scale manually capped at ", filter_max, "; all higher values dropped.")
+    lab_caption <- paste0(lab_caption, "\nColor scale manually capped at ", filter_max, "; all higher values colored ", max_color, ".")
     
     # Feedback
-    print(paste("Filtered out values greater than",
+    print(paste("Values greater than",
                 {{filter_max}},
-                "from",
-                deparse(substitute(variable_of_interest))))
+                "in",
+                deparse(substitute(variable_of_interest)),
+                "will be colored",
+                max_color))
+    
+    cap_color <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                        color = guide_legend(title = paste0(filter_max, "+"),
+                                             order = 2,
+                                             title.position = "bottom",
+                                             title.theme = element_text(size = 10),
+                                             override.aes=list(color = max_color, fill = max_color)))
   }
   
   # Default color scale settings. Limits set minimum to 0 so that the color scale will always start at 0 regardless of min in data
-  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA))
+  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = max_color)
   
   # Adjusting color scale and labels if the variable of interest is internal temperature
   if(str_detect(deparse(substitute(variable_of_interest)), "temp") == TRUE){
@@ -1057,7 +1208,9 @@ heatmap_cross <- function(dataset, variable_of_interest, filter_max = NA,
   }
   
   # Expanding axis to allow monitor labels to be closer to the data
-  options_expand <- expansion(mult = c(0, 0.05))
+  #options_expand <- expansion(mult = c(0, 0.05))
+  options_expand <- expansion(mult = c(0.01, 0.01))
+  x_angle <- 30
   
   # Setting axis breaks based on the minimum time unit in the data set
   if("datetime" %in% colnames(dataset) == TRUE){
@@ -1073,22 +1226,20 @@ heatmap_cross <- function(dataset, variable_of_interest, filter_max = NA,
     x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b %Y", expand = options_expand)
     print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
   } else if("hour" %in% colnames(dataset) == TRUE){
-    dataset <- dataset %>% mutate(time = hms::as_hms(hour*60*60), timestamp = as_datetime(time))
-    #x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
-    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand, limits = )
-    # dataset <- dataset %>% rename(timestamp = hour)
-    # x_scale <- scale_x_continuous(breaks = 0:23, limits = c(-1, 24))
+    dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
+    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
+    x_angle <- 45
     print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
   } else { stop("INPUT ERROR: No time-based variables found!") }
   
   
   dataset %>% 
-    drop_na({{variable_of_interest}}) %>% 
     distinct() %>% 
     left_join(temp_loc) %>% 
     ggplot(aes(
       x = timestamp,
       y = label,
+      color = "",
       fill = {{variable_of_interest}}
     )) +
     facet_grid(DEVICE_LOCATIONTYPE~., scales = "free_y", space = "free_y") +
@@ -1097,13 +1248,10 @@ heatmap_cross <- function(dataset, variable_of_interest, filter_max = NA,
     scale_y_discrete(limits = rev) + 
     ggthemes::theme_few() +
     theme(
-      # legend.position = c(1, 1.1),
-      # legend.direction = "horizontal",
-      # legend.justification = "right",
       legend.position = "bottom",
       panel.grid = element_blank(),
       panel.border = element_blank(),
-      axis.text.x = element_text(angle = 30, hjust = 1),
+      axis.text.x = element_text(angle = x_angle, hjust = 1),
       axis.title = element_blank()
     ) + 
     labs(
@@ -1111,13 +1259,15 @@ heatmap_cross <- function(dataset, variable_of_interest, filter_max = NA,
       subtitle = paste(lab_subtitle, lab_caption, sep="\n"),
       fill = lab_fill
     ) +
-    x_scale
+    x_scale + 
+    scale_color_manual(values = "transparent") +
+    cap_color
 }
 ```
 
 ```{r test_heatmap, eval=FALSE}
 #heatmap_cross(data_pm25, variable_of_interest=pm25_atm, filter_max = 50)
-heatmap_cross(data_hourly, variable_of_interest=epa_2021, filter_max = 50)
+heatmap_cross(data_hourly, variable_of_interest=epa_2021, filter_max = 50, max_color = green)
 heatmap_cross(data_daily, variable_of_interest=lrapa)
 heatmap_cross(data_diurnal, variable_of_interest=temperature)
 ```
