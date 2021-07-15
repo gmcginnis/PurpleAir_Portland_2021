@@ -191,48 +191,77 @@ leaflet(data=site_handful) %>%
 ```
 
 ```{r}
+library(leaflet)
 data_full <- data_daily %>% 
   left_join(data_meta) %>% 
-  select(!date_tag) %>% 
-  rename(date_tag = date) %>% 
-  drop_na(epa_2021)
+  drop_na(epa_2021) %>% 
+  mutate(tag = str_extract(date_tag, ".+(?=\\\n)"))
 
-date_tag_list <- as.character(unique(data_full$date_tag))
+date_list <- as.character(unique(data_full$date))
+loc_list <- as.character(unique(data_full$DEVICE_LOCATIONTYPE))
 map <- leaflet(data_full) %>% 
   addProviderTiles(providers$CartoDB.DarkMatter)
 pal <- colorNumeric(palette = "viridis", domain = data_full$epa_2021)
 
-pm_popup <- paste0("<b>",data_full$label,"</b> (",data_full$latitude,", ",data_full$longitude,")",
-                   "<br><b>Device location:</b> ", data_full$DEVICE_LOCATIONTYPE,
+pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longitude,")",
+                   "<br><b>Location:</b> ", data_full$DEVICE_LOCATIONTYPE,
                   "<br><b>Internal temperature (\u00B0F):</b> ", data_full$temperature,
                   "<br><b>RH (%):</b> ", data_full$humidity,
                   "<br><b>EPA 2020:</b> ", data_full$epa_2020,
                   "<br><b>EPA 2021:</b> ", data_full$epa_2021,
                   "<br><b>LRAPA:</b> ", data_full$lrapa,
-                  " (", data_bc$event, ")")
+                  "<br>(", data_full$tag, ")")
 
 
-for(date_tag_single in date_tag_list){
-  data_temp <- data_full[data_full$date_tag == date_tag_single,]
-  
-  map <- map %>%
-    addCircleMarkers(
-      data = data_temp,
-      lng = ~longitude,
-      lat = ~latitude,
-      color = ~pal(epa_2021),
-      radius = 5,
-      fillOpacity = 0.5,
-      #radius = ~sqrt(epa_2021),
-      group = date_tag_single,
-      label = ~as.character(round(epa_2021, digits=2))
-    )
-  
-  #remove(data_temp, date_tag_single, date_tag_list)
+for (loc_single in loc_list){
+  data_temp <- data_full %>% filter(DEVICE_LOCATIONTYPE == loc_single)
+
+  for (date_single in date_list) {
+    data_temp <- data_temp %>% filter(date == date_single)
+
+    map <- map %>%
+      addCircleMarkers(
+        data = data_temp,
+        lng = ~longitude,
+        lat = ~latitude,
+        color = ~pal(epa_2021),
+        radius = 5,
+        fillOpacity = 0.5,
+        stroke = FALSE,
+        #radius = ~sqrt(epa_2021),
+        group = date_single,
+        label = ~as.character(round(epa_2021, digits=2)),
+        popup = pm_popup
+      )
+  }
 }
+
+# for(date_single in date_list){
+#   data_temp <- data_full[data_full$date == date_single,] %>% 
+#     filter(DEVICE_LOCATIONTYPE == "outside")
+# 
+#   map <- map %>%
+#     addCircles(
+#     #addCircleMarkers(
+#       data = data_temp,
+#       lng = ~longitude,
+#       lat = ~latitude,
+#       color = ~pal(epa_2021),
+#       radius = 5,
+#       fillOpacity = 0.5,
+#       #radius = ~sqrt(epa_2021),
+#       group = date_single,
+#       label = ~as.character(round(epa_2021, digits=2)),
+#       popup = pm_popup
+#     )
+# 
+#   #remove(data_temp, date_tag_single, date_tag_list)
+# }
+
 map %>%
   addLayersControl(
-    baseGroups = date_tag_list,
+    baseGroups = date_list,
+    #overlayGroups = loc_list,
     options = layersControlOptions(collapsed = FALSE)
   )
 ```
