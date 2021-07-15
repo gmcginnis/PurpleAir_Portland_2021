@@ -30,8 +30,8 @@ library(viridis)
 
 ```{r inputs}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
-input_startdate <- "2020-07-01"
-input_enddate <- "2020-07-06"
+input_startdate <- "2021-07-01"
+input_enddate <- "2021-07-06"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
 # Grab data for outdoor sensors?
@@ -63,9 +63,9 @@ run_date_grouping <- TRUE
 # Date grouping categories:
 input_date_tags <- c("Before", "Independence Day", "After")
 # Start dates (in a list, "YYYY-MM-DD")
-input_date_starts <- c("2020-07-01", "2020-07-04", "2020-07-05")
+input_date_starts <- c("2021-07-01", "2021-07-04", "2021-07-05")
 # End dates (in a list, "YYYY-MM-DD")
-input_date_ends <- c("2020-07-03", "2020-07-04", "2020-07-08")
+input_date_ends <- c("2021-07-03", "2021-07-04", "2021-07-08")
 
 ## HOUR GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
 # Run hour grouping? If set to "FALSE", the hour inputs below will not matter (but will still appear in the environment)
@@ -1063,21 +1063,23 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   start_date <- format(as.Date(start_date), "%d %b %Y")
   end_date <- format(as.Date(end_date), "%d %b %Y")
   
-  # Default plot labels
-  lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
-  lab_subtitle <- paste("PurpleAir data from", start_date, "to", end_date)
-  lab_fill <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
-  
   # Getting min and max values from the data set
   val_min <- min(dataset[,deparse(substitute(variable_of_interest))], na.rm=TRUE)
   val_max <- max(dataset[,deparse(substitute(variable_of_interest))], na.rm=TRUE)
   
-  lab_caption <- paste0("Variable plotted: ",
-                       deparse(substitute(variable_of_interest)),
-                       ", with a range from ",
-                       round(val_min, digits = digits),
-                       " to ",
-                       round(val_max, digits = digits))
+  # Default plot labels
+  lab_title <- "Heatmap of"
+  lab_title_val <- "Particulate Matter (PM)"
+  lab_fill <- expression(paste("PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  lab_subtitle <- paste0("Variable plotted: ",
+                         deparse(substitute(variable_of_interest)),
+                         ", with a reported range of ",
+                         round(val_min, digits = digits),
+                         " to ",
+                         round(val_max, digits = digits), " units.")
+  lab_caption <- paste0("Data from PurpleAir, from ",
+                        start_date, " to ", end_date, ".",
+                        "\nMonitors are arranged north to south in their respective groups.")
   
   cap_color <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
                       color = "none")
@@ -1089,7 +1091,7 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
       mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>{{filter_max}}), NA))
     
     # Updated lab caption to include the filter
-    lab_caption <- paste0(lab_caption, "\nColor scale manually capped at ", filter_max, "; all higher values colored ", max_color, ".")
+    lab_subtitle <- paste0(lab_subtitle, "\nColor scale manually capped at ", filter_max, "; all higher values colored ", max_color, ".")
     
     # Feedback
     print(paste("Values greater than",
@@ -1112,7 +1114,7 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   
   # Adjusting color scale and labels if the variable of interest is internal temperature
   if (str_detect(deparse(substitute(variable_of_interest)), "temperature") == TRUE) {
-    lab_title <- paste("Heatmap of internal temperature values across time")
+    lab_title_val <- "internal temperature"
     fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
     print("Temperature detected as variable of interest; adjusting labels accordingly")
     lab_fill <- "Internal temperature (\u00B0F):"
@@ -1124,31 +1126,35 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   }
   # Adjusting color scale and labels if the variable of interest is RH
   if (str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE) {
-    lab_title <- paste("Heatmap of RH values across time")
+    #lab_title <- paste("Heatmap of humidity")
+    lab_title_val <- "humidity"
     lab_fill <- "Relative humidity (%):"
     fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9)
     print("RH detected as variable of interest; adjusting labels accordingly")
   }
   
   # Expanding axis to allow monitor labels to be closer to the data
-  #options_expand <- expansion(mult = c(0, 0.05))
   options_expand <- expansion(mult = c(0.01, 0.01))
   x_angle <- 30
   
   # Setting axis breaks based on the minimum time unit in the data set
   if ("datetime" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- "\nacross time, unaveraged"
     dataset <- dataset %>% rename(timestamp = datetime)
     x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
   } else if ("date_hour" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- "\nacross time, averaged hourly by day"
     dataset <- dataset %>% rename(timestamp = date_hour)
     x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
   } else if ("date" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- "\nacross time, averaged by day"
     dataset <- dataset %>% rename(timestamp = date)
     x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
   } else if ("hour" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- "\nacross time, averaged by hour of day"
     dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
     x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
     x_angle <- 45
@@ -1178,9 +1184,10 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
       axis.title = element_blank()
     ) + 
     labs(
-      title = lab_title,
-      subtitle = paste(lab_subtitle, lab_caption, sep="\n"),
-      fill = lab_fill
+      title = paste(lab_title, lab_title_val, lab_title_sub),
+      subtitle = lab_subtitle,
+      fill = lab_fill,
+      caption = lab_caption
     ) +
     x_scale + 
     scale_color_manual(values = "transparent") +
@@ -1189,8 +1196,8 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
 ```
 
 ```{r test_heatmap, eval=FALSE}
-#heatmap_cross(data_pm25, variable_of_interest=pm25_atm, filter_max = 50)
-heatmap_cross(data_hourly, variable_of_interest=epa_2021, filter_max = 50, max_color = green)
-heatmap_cross(data_daily, variable_of_interest=lrapa)
+#heatmap_cross(data_pm25, variable_of_interest=pm25_atm, filter_max = 50, drop_incomplete = TRUE)
+heatmap_cross(data_hourly, variable_of_interest=epa_2021, filter_max = 50, max_color = green, drop_incomplete = TRUE)
+heatmap_cross(data_daily, variable_of_interest=humidity)
 heatmap_cross(data_diurnal, variable_of_interest=temperature)
 ```
