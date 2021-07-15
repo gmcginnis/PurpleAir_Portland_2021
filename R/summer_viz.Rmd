@@ -198,10 +198,11 @@ data_full <- data_daily %>%
   mutate(tag = str_extract(date_tag, ".+(?=\\\n)"))
 
 date_list <- as.character(unique(data_full$date))
-loc_list <- as.character(unique(data_full$DEVICE_LOCATIONTYPE))
+loc_list <- unique(data_full$DEVICE_LOCATIONTYPE)
 map <- leaflet(data_full) %>% 
   addProviderTiles(providers$CartoDB.DarkMatter)
 pal <- colorNumeric(palette = "viridis", domain = data_full$epa_2021)
+stroke_pal <- colorFactor(palette = "RdYlBu", domain = data_full$DEVICE_LOCATIONTYPE)
 
 pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longitude,")",
                    "<br><b>Location:</b> ", data_full$DEVICE_LOCATIONTYPE,
@@ -212,29 +213,32 @@ pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longit
                   "<br><b>LRAPA:</b> ", data_full$lrapa,
                   "<br>(", data_full$tag, ")")
 
-
-for (loc_single in loc_list){
-  data_temp <- data_full %>% filter(DEVICE_LOCATIONTYPE == loc_single)
+# 
+# for (loc_single in loc_list){
+#   data_temp <- data_full %>% filter(DEVICE_LOCATIONTYPE == loc_single)
 
   for (date_single in date_list) {
-    data_temp <- data_temp %>% filter(date == date_single)
+    data_temp <- data_full %>% filter(date == date_single)
 
     map <- map %>%
       addCircleMarkers(
         data = data_temp,
         lng = ~longitude,
         lat = ~latitude,
-        color = ~pal(epa_2021),
+        color = ~stroke_pal(DEVICE_LOCATIONTYPE),
+        weight = 1,
+        fillColor = ~pal(epa_2021),
+        #color = ~pal(epa_2021),
         radius = 5,
         fillOpacity = 0.5,
-        stroke = FALSE,
+        #stroke = FALSE,
         #radius = ~sqrt(epa_2021),
         group = date_single,
         label = ~as.character(round(epa_2021, digits=2)),
         popup = pm_popup
       )
   }
-}
+# }
 
 # for(date_single in date_list){
 #   data_temp <- data_full[data_full$date == date_single,] %>% 
@@ -266,6 +270,122 @@ map %>%
   )
 ```
 
+```{r single_leaflet}
+data_full <- data_daily %>% 
+  left_join(data_meta) %>% 
+  drop_na(epa_2021) %>% 
+  mutate(tag = str_extract(date_tag, ".+(?=\\\n)")) %>% 
+  filter(date == "2021-07-01")
+
+loc_list <- unique(data_full$DEVICE_LOCATIONTYPE)
+map <- leaflet(data_full) %>% 
+  addProviderTiles(providers$CartoDB.DarkMatter)
+pal <- colorNumeric(palette = "viridis", domain = data_full$epa_2021)
+
+pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longitude,")",
+                   "<br><b>Location:</b> ", data_full$DEVICE_LOCATIONTYPE,
+                  "<br><b>Internal temperature (\u00B0F):</b> ", data_full$temperature,
+                  "<br><b>RH (%):</b> ", data_full$humidity,
+                  "<br><b>EPA 2020:</b> ", data_full$epa_2020,
+                  "<br><b>EPA 2021:</b> ", data_full$epa_2021,
+                  "<br><b>LRAPA:</b> ", data_full$lrapa)
+
+# 
+# for (loc_single in loc_list){
+#   data_temp <- data_full %>% filter(DEVICE_LOCATIONTYPE == loc_single)
+
+  for (loc_single in loc_list) {
+    data_temp <- data_full %>% filter(DEVICE_LOCATIONTYPE == loc_single)
+
+    map <- map %>%
+      addCircles(
+        data = data_temp,
+        lng = ~longitude,
+        lat = ~latitude,
+        # color = "white",
+        weight = 20,
+        # opacity = 0.1,
+        color = ~pal(epa_2021),
+        opacity = 0.7,
+        # fillColor = ~pal(epa_2021),
+        # fillOpacity = 0.5,
+        group = loc_single,
+        label = ~as.character(round(epa_2021, digits=2)),
+        popup = pm_popup
+      )
+  }
+
+map %>%
+  addLayersControl(
+    overlayGroups = loc_list,
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+```{r groups}
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+
+data <- data.frame(ID = c("1", "2","3","4","5","6","7","8"),
+                   Name = c("A", "A", "A", "B", "B", "C", "C", "C"),
+                   Value1 = c(12,43,54,34,23,77,44,22),
+                   Value2 = c(6,5,2,7,5,6,4,3),
+                   Lat = c(51.1, 51.6, 57.3, 52.4, 56.3, 54.3, 60.4, 49.2),
+                   Lon = c(5, -3, -2, -1, 4, 3, -5, 0))
+data %>%
+  leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addCircles(lat=~Lat, lng=~Lon, radius = ~Value1*1000, group=~Name, label=~Name, popup=~as.character(Value1), layerId = ~paste(ID,"Value1", sep="")) %>%
+  addCircles(lat=~Lat, lng=~Lon, radius = ~Value2, group=~Name, label=~Name, popup=~as.character(Value2), layerId = ~paste(ID,"Value2", sep="")) %>%
+  addLayersControl(
+    baseGroups = c("Value1", "Value2"),
+    overlayGroups = c("A", "B", "C"),
+    options = layersControlOptions(collapsed = F)
+  ) %>%
+  htmlwidgets::onRender("
+    function(el, x) {
+      var myMap = this;
+      var baseLayer = 'Value1';
+      myMap.eachLayer(function(layer){
+        var id = layer.options.layerId;
+        if (id){
+          if ('Value1' !== id.substring(1,)){
+            layer.getElement().style.display = 'none';
+          }
+        }
+      })
+      console.log(myMap.baselayer);
+      myMap.on('baselayerchange',
+        function (e) {
+          baseLayer=e.name;
+          myMap.eachLayer(function (layer) {
+              var id = layer.options.layerId;
+              if (id){
+                if (e.name !== id.substring(1,)){
+                  layer.getElement().style.display = 'none';
+                  layer.closePopup();
+                }
+                if (e.name === id.substring(1,)){
+                  layer.getElement().style.display = 'block';
+                }
+              }
+
+          });
+        })
+        myMap.on('overlayadd', function(e){
+          myMap.eachLayer(function(layer){
+            var id = layer.options.layerId;
+            if (id){
+                if (baseLayer !== id.substring(1,)){
+                  layer.getElement().style.display = 'none';
+                }
+            }    
+          })
+        })
+    }")
+```
+
 
 
 
@@ -281,7 +401,10 @@ long_set <- data_hourly %>%
       EPA = c("epa_2020", "epa_2021", "epa_atm"),
       LRAPA = "lrapa"
     )
-  )
+  ) %>% 
+  left_join(data_meta) %>% 
+  filter(DEVICE_LOCATIONTYPE == "outside",
+         pm25 <= 200)
 
 long_set %>% 
   ggplot(aes(date_hour, pm25, color = corr)) +
@@ -339,10 +462,81 @@ data_hourly %>%
   scale_fill_viridis(option="plasma", limits=c(0, 50))
 ```
 
+```{r}
+library(GGally)
+
+ggparcoord(iris, columns=1:4, groupColumn=5)
+ggparcoord(iris, columns=1:4, groupColumn="Species")
+
+data_daily %>% 
+  #left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:20))) %>% 
+  left_join(data_meta) %>% 
+  drop_na(label) %>% 
+  select(site_id, date, epa_2021, DEVICE_LOCATIONTYPE) %>% 
+  drop_na(epa_2021) %>% 
+  distinct() %>% 
+  pivot_wider(names_from = date, values_from = epa_2021) %>% 
+  ggparcoord(columns = 3:7, groupColumn = "DEVICE_LOCATIONTYPE", scale = "center")
+```
+
+```{r}
+data_hourly %>% 
+  column_dt(c("hour", "date")) %>% 
+  ungroup() %>% 
+  group_by(hour, date) %>% 
+  summarize(pm = mean(epa_2021, na.rm=TRUE)) %>% 
+  ggplot(aes(x = hour, y = pm, color = date, group = date)) +
+  geom_line()
+
+data_daily %>% 
+  select(date, epa_2021) %>% 
+  ggplot(aes(x = epa_2021)) +
+  facet_wrap(~date) +
+  geom_histogram(binwidth = 1)
+
+high_ids <- raw_meta %>%
+  select(site_id, flag_highValue) %>%
+  filter(flag_highValue == TRUE) %>% 
+  pull(site_id)
+
+data_hourly %>% 
+  select(site_id, date_hour, epa_2021) %>% 
+  rename(pm = epa_2021) %>% 
+  rbind((data_deq %>% select(site_id, date_hour, pm25_deq) %>% rename(pm = pm25_deq))) %>% 
+  filter(!site_id %in% high_ids) %>% 
+  left_join(data_meta) %>% 
+  select(site_id, date_hour, pm, DEVICE_LOCATIONTYPE) %>% 
+  mutate()
+  # left_join((data_meta %>% select(site_id, DEVICE_LOCATIONTYPE))) %>% 
+  # left_join((data_deq_meta %>% select(site_id, DEVICE_LOCATIONTYPE)), by = "site_id")
+
+data_hourly %>% 
+  drop_na(epa_2021) %>% 
+  filter(!site_id %in% high_ids) %>% 
+  left_join(data_meta) %>% 
+  ggplot(aes(x = date_hour, y = epa_2021, color = DEVICE_LOCATIONTYPE, shape = DEVICE_LOCATIONTYPE, alpha = DEVICE_LOCATIONTYPE)) +
+  geom_point(size = 2) +
+  scale_alpha_manual(values = c("outside" = 0.1, "inside" = 0.5, "DEQ" = 1.0)) +
+  scale_shape_manual(values = c("outside" = 16, "inside" = 18, "DEQ" = 17)) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  guides(alpha = "none")
+
+data_hourly %>% 
+  drop_na(epa_2021) %>% 
+  filter(!site_id %in% high_ids) %>% 
+  column_dt(c("date", "hour")) %>% 
+  left_join(data_meta) %>% 
+  ggplot(aes(x = hour, y = epa_2021, color = date, group = date)) +
+  geom_line()
+```
+
+
+
 ```{r,eval=FALSE}
 ggplot(data_daily, aes(x = date, y = epa_2021, group = date)) +
   geom_violin() + 
-  geom_jitter()
+  geom_jitter(alpha = 0.1)
 
 data_daily %>% 
   left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:20))) %>% 
@@ -355,6 +549,8 @@ data_daily %>%
 
 data_hourly %>% 
   left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:20))) %>% 
+  drop_na(DEVICE_LOCATIONTYPE) %>% 
+  column_dt(c("date", "hour")) %>% 
   ggplot(aes(x = hour, y = epa_2021, group = site_id)) +
   facet_grid(date~DEVICE_LOCATIONTYPE) +
   geom_point()
@@ -378,10 +574,11 @@ data_daily %>%
   # sg_axis_x(5,tick_units="day")
 
 library(highcharter)
-data_daily %>% 
+data_hourly %>% 
+  filter(epa_2021 <= 200, str_detect(date_tag, "Before"), site_id %in% (data_meta %>% slice(1:10) %>% pull(site_id))) %>% 
   left_join(data_meta) %>% 
   # left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:10))) %>%
   # drop_na(label) %>%
-  hchart("streamgraph", hcaes(date, epa_2021, group=label))
+  hchart("streamgraph", hcaes(date_hour, epa_2021, group=label))
 ```
 

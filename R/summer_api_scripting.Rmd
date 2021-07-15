@@ -30,8 +30,8 @@ library(viridis)
 
 ```{r inputs}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
-input_startdate <- "2021-07-01"
-input_enddate <- "2021-07-06"
+input_startdate <- "2021-07-09"
+input_enddate <- "2021-07-14"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
 # Grab data for outdoor sensors?
@@ -54,12 +54,12 @@ input_north <- 45.6
 # Labels of monitors to include. If NULL/unspecified, all monitors will be included.
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Example format (capitalization matters!): input_labels <- c("se", "SE", "Se", "STAR", "PSU")
-input_labels <- NULL
+input_labels <- "Indigo"
 
 # Optional grouping settings
 ## DATE GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
 # Run date grouping? If set to "FALSE", the date inputs below will not matter (but will still appear in the environment)
-run_date_grouping <- TRUE
+run_date_grouping <- FALSE
 # Date grouping categories:
 input_date_tags <- c("Before", "Independence Day", "After")
 # Start dates (in a list, "YYYY-MM-DD")
@@ -153,8 +153,9 @@ if (length(ids) > 100) {
 }
 # Message returning the number of monitors that will be selected
 print(paste("Number of selected monitors:", length(ids)))
+```
 
-# Cleaning environment
+```{r eclean_ids}
 remove(ids_outside, ids_inside, inout_report)
 ```
 
@@ -1009,8 +1010,8 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
 ```
 
 ```{r test_heatmap_single, eval=FALSE}
-heatmap_single(data_hourly, "Rose City", epa_2021)
-heatmap_single(data_hourly, "Benson 1", humidity)
+heatmap_single(data_hourly, "Indigo", epa_2021)
+heatmap_single(data_hourly, "Indigo", humidity)
 heatmap_single(data_hourly, "Edgewater", temperature)
 ```
 
@@ -1197,7 +1198,7 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
 
 ```{r test_heatmap, eval=FALSE}
 #heatmap_cross(data_pm25, variable_of_interest=pm25_atm, filter_max = 50, drop_incomplete = TRUE)
-heatmap_cross(data_hourly, variable_of_interest=epa_2021, filter_max = 50, max_color = green, drop_incomplete = TRUE)
-heatmap_cross(data_daily, variable_of_interest=humidity)
-heatmap_cross(data_diurnal, variable_of_interest=temperature)
+heatmap_cross(data_hourly, variable_of_interest=epa_2021, start_date = min(data_daily$date))
+heatmap_cross(data_daily, variable_of_interest=epa_2021, start_date = min(data_daily$date))
+heatmap_cross(data_diurnal, variable_of_interest=epa_2021, start_date = min(data_daily$date))
 ```
