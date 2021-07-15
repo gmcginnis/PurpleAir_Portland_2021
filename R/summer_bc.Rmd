@@ -18,7 +18,7 @@ library(viridis)
 ```
 
 ```{r inputs}
-file_data_folder <- "Data34_210702_10h59m"#"DST-BC-test-data-1July2021"
+file_data_folder <- "jul_10-13"
 
 # Use a valid Olson name; see options with OlsonNames()
 # Reported TZ for the data can be found in the settings file
@@ -26,8 +26,11 @@ time_zone <- "America/Los_Angeles"
 
 # Column names
 # This can be set to NULL if the settings file is in the folder of data
-#col_names <- NULL
-col_names <- c("TS", "Iref", "Isig", "ATN", "BC", "RH", "T", "FR", "Vbat", "GPSlat", "GPSlong")
+col_names <- NULL
+#col_names <- c("TS", "Iref", "Isig", "ATN", "BC", "RH", "T", "FR", "Vbat", "GPSlat", "GPSlong")
+
+# How many minutes of data to drop at start
+drop_min <- 5
 ```
 
 ```{r loading_data}
@@ -56,16 +59,127 @@ raw_bc_data <- data.frame()
 for(i in file_data){
   data_temp <- read_csv(file.path(file_folder, file_data_folder, i),
                      col_names = col_names) %>% 
-    mutate(TS = as.POSIXct(str_replace(TS, "\\$", ""), tz = time_zone))
+    mutate(
+      TS = as.POSIXct(str_replace(TS, "\\$", ""), tz = time_zone),
+      file = as.character(i)
+    )
   
   raw_bc_data <- rbind(raw_bc_data, data_temp)
   remove(data_temp)
 }
 ```
 
-```{r clean_environment}
+```{r eclean_read}
 remove(time_zone, col_names, i, list = ls(pattern = "file_"))
 ```
+
+```{r}
+data_bc <- raw_bc_data %>% 
+  group_by(file) %>% 
+  slice(-(1:((60*drop_min)/2))) %>% 
+  filter(
+    between(BC, 0, 500), #Black carbon in micrograms per cubic meter
+    between(RH, 0, 80), #Relative humidity in percent
+    between(`T`, 0, 40) #Temperature in deg C
+  ) %>% 
+  mutate(TS = floor_date(TS, unit = "minute")) %>% 
+  group_by(file, TS) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE)
+```
+
+```{r}
+bc <- data_bc %>% 
+  filter(!str_detect(file, "-13")) %>% 
+  select(TS, BC) %>% 
+  rename("value" = "BC", "datetime" = "TS") %>% 
+  mutate(corr = "BC", pollutant = "BC", source = "BC")
+
+bc_hourly <- bc %>% 
+  mutate(datetime = floor_date(datetime, unit = "hour")) %>% 
+  group_by(datetime) %>% 
+  summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+  mutate(corr = "BC", pollutant = "BC", source = "BC")
+
+pa <- data_hourly %>% 
+  ungroup() %>% 
+  select(!c(hour_tag, temperature, humidity, pm25_cf1_A, pm25_cf1_B, pm25_atm_A, pm25_atm_B, site_id)) %>% 
+  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+               names_to = "corr",
+               values_to = "value") %>% 
+  mutate(
+    pollutant = "PM2.5",
+    corr = fct_inorder(corr),
+    source = fct_collapse(corr,
+      PA = c("pm25_cf1", "pm25_atm"),
+      EPA = c("epa_2020", "epa_2021", "epa_atm"),
+      LRAPA = "lrapa"
+    )
+  ) %>% 
+  rename(datetime = date_hour) %>% 
+  filter(between(datetime, min(bc_hourly$datetime), max(bc_hourly$datetime))) %>% 
+  drop_na(value)
+
+full_join(pa, (bc %>% filter(value <= 1))) %>%
+# full_join(pa, bc) %>% 
+  ggplot(aes(x = datetime, y = value, color = corr, group = corr)) +
+  facet_grid(pollutant~., scales = "free_y") +
+  geom_line(alpha = 0.7) +
+  geom_point(shape = 1, alpha = 0.5) +
+  stat_smooth(data = subset(full_join(pa, (bc %>% filter(value <= 1))), corr == "BC"), color = "black") +
+  # stat_smooth(data = subset(full_join(pa, bc), corr == "BC"), color = "black") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+full_join(pa, bc_hourly) %>% 
+  ggplot(aes(x = datetime, y = value, color = corr, group = corr)) +
+  facet_grid(pollutant~., scales = "free_y") +
+  geom_line(alpha = 0.7) +
+  geom_point(shape = 1, alpha = 0.5) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+full_join(pa, bc_hourly) %>% 
+  select(!c(source, pollutant)) %>% 
+  pivot_wider(names_from = corr, values_from = value) %>% 
+  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm), names_to = "corr", values_to = "PM") %>% 
+  mutate(per_diff = 100*(abs(BC-PM)/((BC+PM)/2))) %>% 
+  ggplot(aes(x = datetime, y = per_diff, color = corr)) +
+  geom_hline(yintercept = 0, color = "black") +
+  geom_line(alpha = 0.7) +
+  geom_point(shape = 1, alpha = 0.5) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+pa %>% 
+  rename(PM = value) %>% 
+  select(!c(source, pollutant)) %>% 
+  full_join(bc_hourly, by = "datetime") %>% 
+  rename(
+    "corr" = "corr.x",
+    "BC" = "value"
+  ) %>% 
+  drop_na() %>% 
+  mutate(date = date(datetime)) %>% 
+  ggplot(aes(x = PM, y = BC, color = corr, fill = corr)) +
+  facet_wrap(~date) +
+  geom_point() +
+  stat_smooth(method = "lm", alpha = 0.1) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+bc %>% 
+  ungroup() %>% 
+  mutate(datetime = floor_date(datetime, unit = "1 hour")) %>% 
+  select(datetime, value) %>% 
+  rename("BC" = value) %>% 
+  full_join((pa %>% select(datetime, value, corr) %>% rename("PM" = value))) %>% 
+  ggplot(aes(x = PM, y = BC)) +
+  facet_wrap(~corr, scales = "free") +
+  geom_point(shape = 1, alpha = 0.5) +
+  stat_smooth(method = "lm", se = FALSE)
+
+```
+
 
 ```{r commute_tags, eval=FALSE}
 # used for file_data_folder <- "DST-BC-test-data-1July2021"
