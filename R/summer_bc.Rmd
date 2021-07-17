@@ -150,6 +150,27 @@ full_join(pa, bc_hourly) %>%
   theme_bw() +
   theme(legend.position = "bottom")
 
+
+data_pm25 %>% 
+  ungroup() %>% 
+  filter(between(datetime, min(bc$datetime), max(bc$datetime))) %>% 
+  select(c(datetime, pm25_atm)) %>% 
+  pivot_longer(cols = where(is.numeric)) %>% 
+  mutate(pollutant = "PM2.5") %>% 
+  full_join(bc %>% rename(name = source)) %>% 
+  #full_join((data_bc %>% ungroup() %>% select(TS, BC) %>% rename(datetime = TS, value = BC) %>% mutate(name = "BC", source = "BC"))) %>% 
+  ggplot(aes(x = datetime, y = value, color = name)) +
+  facet_grid(pollutant~., scales = "free_y") +
+  #stat_smooth(color = "black", alpha = 0.5) +
+  geom_line(alpha = 0.7) +
+  geom_point(shape = 1, alpha = 0.5) +
+  #stat_smooth(data = subset(full_join(pa, (bc %>% filter(value <= 1))), corr == "BC"), color = "black") +
+  # stat_smooth(data = subset(full_join(pa, bc), corr == "BC"), color = "black") +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(breaks = scales::date_breaks("1 hour"), date_labels = "%d %b, %H:%M") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
 pa %>% 
   rename(PM = value) %>% 
   select(!c(source, pollutant)) %>% 

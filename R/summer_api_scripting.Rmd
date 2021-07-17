@@ -31,8 +31,8 @@ library(viridis)
 ```{r inputs}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
 # Data will be pulled from the start of the start date through the end of the end date
-input_startdate <- "2021-07-01"
-input_enddate <- "2021-07-08"
+input_startdate <- "2021-07-10"
+input_enddate <- "2021-07-13"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE.
 # Grab data for outdoor sensors?
@@ -58,12 +58,12 @@ input_north <- 45.6
 # Labels of monitors to include. If NULL/unspecified, all monitors will be included.
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Example format (capitalization matters!): input_labels <- c("se", "SE", "Se", "STAR", "PSU")
-input_labels <- c("se", "SE", "Se", "STAR", "PSU")
+input_labels <- "Indigo"
 
 # Optional grouping settings
 ## DATE GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
 # Run date grouping? If set to "FALSE", the date inputs below will not matter (but will still appear in the environment)
-run_date_grouping <- TRUE
+run_date_grouping <- FALSE
 # Date grouping categories:
 input_date_tags <- c("Before", "Independence Day", "After")
 # Start dates (in a list, "YYYY-MM-DD")
@@ -1101,7 +1101,8 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     lab_title_val <- "Particulate Matter (PM)"
     # lab_unit <- expression(paste(mu, "g/m"^3))
     #lab_unit <- expression(mu*"g/m"^3)
-    lab_unit <- '*mu*"g/m"^2*'
+    lab_unit <- "µg/m^2"
+    # lab_unit <- '*mu*"g/m"^2*'
     
     if (str_detect(variable_of_interest_qt, "(1.0)|(01)|(1$)|(1\\D)") == TRUE) {
       pm_val <- 1.0
