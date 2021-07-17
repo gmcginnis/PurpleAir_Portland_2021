@@ -30,14 +30,18 @@ library(viridis)
 
 ```{r inputs}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
-input_startdate <- "2021-07-09"
-input_enddate <- "2021-07-14"
+# Data will be pulled from the start of the start date through the end of the end date
+input_startdate <- "2021-07-01"
+input_enddate <- "2021-07-08"
 
-## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE
+## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE.
 # Grab data for outdoor sensors?
 include_outside <- TRUE
 # Grab data for indoor sensors?
 include_inside <- TRUE
+
+# Drop monitors flagged as reporting high values?
+input_drop_hi <- TRUE
 
 ## INPUTS FOR GETTING PAS & PAT
 ## The following are optional but recommended. Set to NULL if not interested in filtering by the following.
@@ -54,12 +58,12 @@ input_north <- 45.6
 # Labels of monitors to include. If NULL/unspecified, all monitors will be included.
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Example format (capitalization matters!): input_labels <- c("se", "SE", "Se", "STAR", "PSU")
-input_labels <- "Indigo"
+input_labels <- c("se", "SE", "Se", "STAR", "PSU")
 
 # Optional grouping settings
 ## DATE GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
 # Run date grouping? If set to "FALSE", the date inputs below will not matter (but will still appear in the environment)
-run_date_grouping <- FALSE
+run_date_grouping <- TRUE
 # Date grouping categories:
 input_date_tags <- c("Before", "Independence Day", "After")
 # Start dates (in a list, "YYYY-MM-DD")
@@ -76,6 +80,7 @@ input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
 input_hour_starts <- c(5, 12, 17, 21)
 # End hours will be automatically generated
 ```
+
 
 
 ```{r getting_pas}
@@ -175,13 +180,15 @@ data_b <- data.frame()
 # Columns of interest
 input_cols_to_select <- c("created_at", "temperature", "humidity", "pm2.5_cf1", "pm2.5_atm")
 
+input_enddate_1 <- as.Date(input_enddate) + 1
 # Sequencing dates into a list by 1 week gaps due to API limitations
-date_sequence <- seq(from = as.Date(input_startdate), to = as.Date(input_enddate), by = "week")
+date_sequence <- seq(from = as.Date(input_startdate), to = input_enddate_1, by = "week")
 # Adding end date to the end of the sequence if not already present in the set
-if (tail(date_sequence, n=1) != input_enddate) {
-  date_sequence <- date_sequence %>% 
-    append(input_enddate)
+if (tail(date_sequence, n=1) != input_enddate_1) {
+  date_sequence <- date_sequence %>%
+    append(input_enddate_1)
 }
+remove(input_enddate_1)
 
 # Iteration
 for (id in ids[1:id_count]) {
@@ -212,16 +219,16 @@ for (id in ids[1:id_count]) {
   # If there is more than a single pair of dates in the date sequence, sub-iterations will occur
   if (length(date_sequence) > 2) {
     
-    for (i in 2:(length(date_sequence)-1) ) {
+    for (single_position in 2:(length(date_sequence)-1) ) {
       
-      print(sprintf("... from %s to %s", date_sequence[i], date_sequence[i+1]))
+      print(sprintf("... from %s to %s", date_sequence[single_position], date_sequence[single_position+1]))
       
       pat_single_more <- pat_downloadParseRawData(
         id = id,
         label = NULL,
         pas = pas_area,
-        startdate = date_sequence[i],
-        enddate = date_sequence[i + 1],
+        startdate = date_sequence[single_position],
+        enddate = date_sequence[single_position + 1],
         baseUrl = input_baseUrl
       )
       
@@ -237,7 +244,7 @@ for (id in ids[1:id_count]) {
       data_b_single <- rbind(data_b_single, data_b_more)
       
       # Cleaning environment
-      remove(pat_single_more, data_a_more, data_b_more, i)
+      remove(pat_single_more, data_a_more, data_b_more, single_position)
     }
   }
   
@@ -317,9 +324,9 @@ column_dt <- function(dataset, unit){
     "date_hour" %in% colnames(dataset) == FALSE
     ) { stop("ERROR: columns `datetime` and `date_hour` not found in dataset. Execusion halted.") }
   
-  for (i in unit) {
-    if (i %in% c("date", "date_hour", "hour", "hour_minute", "time") == FALSE) {
-      stop(paste0("Unrecognized unit: \`", i, "\`. Please use `date`, `date_hour`, `hour`, `hour_minute`, or `time`."))
+  for (unit_single in unit) {
+    if (unit_single %in% c("date", "date_hour", "hour", "hour_minute", "time") == FALSE) {
+      stop(paste0("Unrecognized unit: \`", unit_single, "\`. Please use `date`, `date_hour`, `hour`, `hour_minute`, or `time`."))
     }
   }
   
@@ -416,7 +423,7 @@ apply_qc <- function(dataset, avg_ab = TRUE){
 
 data_meta <- raw_meta %>% 
   # Selecting only variables of interest, to save on storage
-  select(site_id, DEVICE_LOCATIONTYPE, label, longitude, latitude, timezone)
+  select(site_id, DEVICE_LOCATIONTYPE, label, longitude, latitude, timezone, flag_highValue)
 
 data_pm25 <- raw_data %>% 
   # Applying quality control (see above function)
@@ -425,6 +432,19 @@ data_pm25 <- raw_data %>%
   adjust_timezone() %>% 
   # Reordering variables for ease of reading
   select(site_id, datetime, everything())
+
+if (input_drop_hi == TRUE) {
+  hi_monitors <- data_meta %>% 
+    filter(flag_highValue == TRUE)
+  
+  print("Monitors flagged as high value to be filtered out:")
+  print(hi_monitors$label)
+  
+  data_pm25 <- data_pm25 %>% 
+    filter(!site_id %in% hi_monitors$site_id)
+  
+  remove(hi_monitors)
+}
 ```
 
 ```{r eclean_qc, eval=FALSE}
@@ -715,6 +735,7 @@ data_diurnal <- apply_functions(data_pm25, by_day = FALSE, by_hour = TRUE)
 
 ```{r eclean_applying, eval=FALSE}
 remove(apply_corrections, apply_functions, apply_epa, apply_lrapa, apply_hour_tags, apply_date_tags)
+remove(list = c(ls(pattern = "input_hour_|input_date_")))
 ```
 
 ```{r viz_function_map}
@@ -881,7 +902,6 @@ map_q <- function(pm_data, value, location_data = data_meta,
 map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
 
 data_hourly %>% 
-  filter(site_id != "9c83953c1afae9df_86135") %>% 
   column_dt("hour") %>% 
   mutate(hour = as.factor(hour)) %>% 
   map_q(value = epa_2021, grouping_var = hour, grouping_var_2 = date_tag, inside=FALSE)
@@ -1012,19 +1032,23 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
 ```{r test_heatmap_single, eval=FALSE}
 heatmap_single(data_hourly, "Indigo", epa_2021)
 heatmap_single(data_hourly, "Indigo", humidity)
-heatmap_single(data_hourly, "Edgewater", temperature)
+heatmap_single(data_hourly, "Sunset", epa_2021)
 ```
 
 ```{r viz_function_heatmap}
 heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE,
-                          filter_max = NA, max_color = red,
+                          cap_value = NA, cap_color = red,
                           location_data = data_meta, digits = 2,
                           start_date = input_startdate, end_date = input_enddate){
   
-  # Dropping NA values from the variable of interest (will appear as gaps if viewing the complete viz)
+  # Dropping NA values from the variable of interest
+  # Will appear as gaps if viewing the complete viz, rather than gray
   dataset <- dataset %>% 
     drop_na({{variable_of_interest}})
   
+  variable_of_interest_qt <- deparse(substitute(variable_of_interest))
+  
+  # If monitors with missing values for any time stamp are to be dropped
   if (drop_incomplete == TRUE) {
     # Number of values expected for a complete set
     complete_num <- (dataset %>% 
@@ -1048,10 +1072,11 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     dataset <- dataset %>% 
       filter(!site_id %in% to_drop)
     
-  } else {print("All monitors will be plotted.")}
+  } else { print("All monitors will be plotted.") }
   
-  # Adding quotation marks; removing extra pairs as needed
-  max_color <- deparse(substitute(max_color)) %>% str_replace_all("\\\"", "")
+  # Adding quotation marks
+  cap_color <- deparse(substitute(cap_color)) %>%
+    str_replace_all("\\\"", "") # Removing extra quotation marks if already provided
   
   # Location data
   temp_loc <- location_data %>% 
@@ -1060,78 +1085,108 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     # Selecting only variables of interest to save space
     select(site_id, label, DEVICE_LOCATIONTYPE)
   
-  # Formatting dates
-  start_date <- format(as.Date(start_date), "%d %b %Y")
-  end_date <- format(as.Date(end_date), "%d %b %Y")
-  
-  # Getting min and max values from the data set
-  val_min <- min(dataset[,deparse(substitute(variable_of_interest))], na.rm=TRUE)
-  val_max <- max(dataset[,deparse(substitute(variable_of_interest))], na.rm=TRUE)
-  
   # Default plot labels
   lab_title <- "Heatmap of"
-  lab_title_val <- "Particulate Matter (PM)"
-  lab_fill <- expression(paste("PM"[2.5]*" (", mu, "g/m"^3*"):"))
-  lab_subtitle <- paste0("Variable plotted: ",
-                         deparse(substitute(variable_of_interest)),
-                         ", with a reported range of ",
-                         round(val_min, digits = digits),
-                         " to ",
-                         round(val_max, digits = digits), " units.")
-  lab_caption <- paste0("Data from PurpleAir, from ",
-                        start_date, " to ", end_date, ".",
-                        "\nMonitors are arranged north to south in their respective groups.")
+  lab_title_val <- variable_of_interest_qt
+  lab_fill <- "Unit:"
+  lab_unit <- "units"
   
-  cap_color <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+  cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
                       color = "none")
   
-  # If manually applying a max filter value
-  if (is.na(filter_max) == FALSE) {
-    # Replacing the values above the set max to be NA so that they will be colored differently on the map
-    dataset <- dataset %>% 
-      mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>{{filter_max}}), NA))
+  # Default color scale settings. Limits set minimum to 0 so that the color scale will always start at 0 regardless of min in data
+  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = cap_color)
+  
+  if (str_detect(variable_of_interest_qt, "pm") == TRUE) {
+    lab_title_val <- "Particulate Matter (PM)"
+    # lab_unit <- expression(paste(mu, "g/m"^3))
+    #lab_unit <- expression(mu*"g/m"^3)
+    lab_unit <- '*mu*"g/m"^2*'
     
-    # Updated lab caption to include the filter
-    lab_subtitle <- paste0(lab_subtitle, "\nColor scale manually capped at ", filter_max, "; all higher values colored ", max_color, ".")
-    
-    # Feedback
-    print(paste("Values greater than",
-                {{filter_max}},
-                "in",
-                deparse(substitute(variable_of_interest)),
-                "will be colored",
-                max_color))
-    
-    cap_color <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
-                        color = guide_legend(title = paste0(filter_max, "+"),
-                                             order = 2,
-                                             title.position = "bottom",
-                                             title.theme = element_text(size = 10),
-                                             override.aes=list(color = max_color, fill = max_color)))
+    if (str_detect(variable_of_interest_qt, "(1.0)|(01)|(1$)|(1\\D)") == TRUE) {
+      pm_val <- 1.0
+      # lab_fill <- expression(paste("PM"[1.0]*" (", mu, "g/m"^3*"):"))
+      print("PM 1.0 detected")
+    } else if (str_detect(variable_of_interest_qt, "(25)|(2.5)") == TRUE) {
+      pm_val <- 2.5
+      # lab_fill <- expression(paste("PM"[2.5]*" (", mu, "g/m"^3*"):"))
+      print("PM 2.5 detected")
+    } else if (str_detect(variable_of_interest_qt, "(10)") == TRUE) {
+      pm_val <- 10
+      # lab_fill <- expression(paste("PM"[10]*" (", mu, "g/m"^3*"):"))
+      print("PM 10 detected")
+    } else {
+      pm_val <- NULL
+      # lab_fill <- expression(paste("PM (", mu, "g/m"^3*"):"))
+      print("PM unit undetermined")
+    }
+    lab_fill <- parse(text = paste0('PM[', pm_val, ']~"("', lab_unit,'"):"'))
+    #bquote(PM[.(pm_val)]~"("*mu*"g/"*m^3*")")
   }
   
-  # Default color scale settings. Limits set minimum to 0 so that the color scale will always start at 0 regardless of min in data
-  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = max_color)
-  
   # Adjusting color scale and labels if the variable of interest is internal temperature
-  if (str_detect(deparse(substitute(variable_of_interest)), "temperature") == TRUE) {
+  if (str_detect(variable_of_interest_qt, "temp") == TRUE) {
     lab_title_val <- "internal temperature"
     fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
     print("Temperature detected as variable of interest; adjusting labels accordingly")
-    lab_fill <- "Internal temperature (\u00B0F):"
+    lab_unit <- "\u00B0F"
     
-    if (str_detect(deparse(substitute(variable_of_interest)), "temperature_c") == TRUE) {
-      lab_fill <- "Internal temperature (\u00B0C):"
+    if (str_detect(variable_of_interest_qt, "_c") == TRUE) {
+      lab_unit <- "\u00B0C"
       print("Temperature detected to be in Celsius")
-    }
+    } else { print("Temperature assumed to be in Fahrenheit") }
+    
+    lab_fill <- paste0("Internal temperature (", lab_unit, "):")
   }
+  
   # Adjusting color scale and labels if the variable of interest is RH
-  if (str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE) {
-    #lab_title <- paste("Heatmap of humidity")
+  if (str_detect(variable_of_interest_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
     lab_title_val <- "humidity"
-    lab_fill <- "Relative humidity (%):"
+    lab_unit <- "%"
+    lab_fill <- paste0("Relative humidity (", lab_unit, "):")
     fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9)
     print("RH detected as variable of interest; adjusting labels accordingly")
+  }
+  
+  # Getting min and max values from the data set
+  val_min <- dataset %>% select({{variable_of_interest}}) %>% min(na.rm = TRUE)
+  val_max <- dataset %>% select({{variable_of_interest}}) %>% max(na.rm = TRUE)
+  
+  lab_subtitle <- paste0("Variable plotted: ",
+                         variable_of_interest_qt,
+                         ", with a reported range of ",
+                         round(val_min, digits = digits),
+                         " to ",
+                         round(val_max, digits = digits),
+                         " ", lab_unit, ".")
+  
+    # If manually applying a max filter value
+  if (is.na(cap_value) == FALSE) {
+    # Replacing the values above the set max to be NA so that they will be colored differently on the map
+    dataset <- dataset %>% 
+      mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>{{cap_value}}), NA))
+    
+    # Updated lab caption to include the filter
+    lab_subtitle <- paste0("Color scale manually capped at ",
+                           cap_value, " units; all higher values colored ", cap_color,
+                           ".\n", lab_subtitle)
+    
+    # Feedback
+    print(paste("Values greater than",
+                {{cap_value}},
+                "in",
+                variable_of_interest_qt,
+                "will be colored",
+                cap_color))
+    
+    cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                        color = guide_legend(
+                          title = paste0(cap_value, "+"),
+                          order = 2,
+                          title.position = "bottom",
+                          title.theme = element_text(size = 10),
+                          override.aes=list(color = cap_color, fill = cap_color)
+                        ))
   }
   
   # Expanding axis to allow monitor labels to be closer to the data
@@ -1144,23 +1199,43 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     dataset <- dataset %>% rename(timestamp = datetime)
     x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
+    date_in_set <- TRUE
   } else if ("date_hour" %in% colnames(dataset) == TRUE) {
     lab_title_sub <- "\nacross time, averaged hourly by day"
     dataset <- dataset %>% rename(timestamp = date_hour)
     x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
+    date_in_set <- TRUE
   } else if ("date" %in% colnames(dataset) == TRUE) {
     lab_title_sub <- "\nacross time, averaged by day"
     dataset <- dataset %>% rename(timestamp = date)
     x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
     print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
+    date_in_set <- TRUE
   } else if ("hour" %in% colnames(dataset) == TRUE) {
     lab_title_sub <- "\nacross time, averaged by hour of day"
     dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
     x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
     x_angle <- 45
     print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
+    print("Dates in the caption will default to the inputted start and end dates")
+    date_in_set <- FALSE
   } else { stop("INPUT ERROR: No time-based variables found!") }
+  
+  if (date_in_set == TRUE) {
+    start_date <- min(date(dataset$timestamp))
+    end_date <- max(date(dataset$timestamp))
+  } else {
+    start_date <- as.Date(start_date)
+    end_date <- as.Date(end_date)
+  }
+  # Formatting dates
+  start_date <- format(start_date, "%d %b %Y")
+  end_date <- format(end_date, "%d %b %Y")
+  
+  lab_caption <- paste0("Data from PurpleAir, from ",
+                        start_date, " to ", end_date, ".",
+                        "\nMonitors are arranged north to south in their respective groups.")
   
   
   dataset %>% 
@@ -1176,13 +1251,14 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     geom_tile() +
     fill_colors + 
     scale_y_discrete(limits = rev) + 
-    ggthemes::theme_few() +
+    theme_minimal() +
     theme(
       legend.position = "bottom",
       panel.grid = element_blank(),
       panel.border = element_blank(),
       axis.text.x = element_text(angle = x_angle, hjust = 1),
-      axis.title = element_blank()
+      axis.title = element_blank(),
+      axis.ticks.x = element_line()
     ) + 
     labs(
       title = paste(lab_title, lab_title_val, lab_title_sub),
@@ -1192,13 +1268,14 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     ) +
     x_scale + 
     scale_color_manual(values = "transparent") +
-    cap_color
+    cap_guide
 }
 ```
 
 ```{r test_heatmap, eval=FALSE}
-#heatmap_cross(data_pm25, variable_of_interest=pm25_atm, filter_max = 50, drop_incomplete = TRUE)
-heatmap_cross(data_hourly, variable_of_interest=epa_2021, start_date = min(data_daily$date))
-heatmap_cross(data_daily, variable_of_interest=epa_2021, start_date = min(data_daily$date))
-heatmap_cross(data_diurnal, variable_of_interest=epa_2021, start_date = min(data_daily$date))
+#heatmap_cross(data_pm25, variable_of_interest=pm25_atm, cap_value = 50, drop_incomplete = TRUE)
+heatmap_cross(data_pm25, pm25_atm, cap_value = 50, cap_color = green)
+heatmap_cross(data_hourly, epa_2021)
+heatmap_cross(data_daily, temperature)
+heatmap_cross(data_diurnal, epa_2021)
 ```
