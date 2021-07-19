@@ -735,7 +735,7 @@ data_diurnal <- apply_functions(data_pm25, by_day = FALSE, by_hour = TRUE)
 
 ```{r eclean_applying, eval=FALSE}
 remove(apply_corrections, apply_functions, apply_epa, apply_lrapa, apply_hour_tags, apply_date_tags)
-remove(list = c(ls(pattern = "input_hour_|input_date_")))
+remove(list = c(ls(pattern = "input_(hour|date)_")))
 ```
 
 ```{r viz_function_map}
@@ -1101,8 +1101,8 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     lab_title_val <- "Particulate Matter (PM)"
     # lab_unit <- expression(paste(mu, "g/m"^3))
     #lab_unit <- expression(mu*"g/m"^3)
-    lab_unit <- "µg/m^2"
-    # lab_unit <- '*mu*"g/m"^2*'
+    # lab_unit <- "µg/m^3"
+    lab_unit <- '*mu*"g/m"^3*'
     
     if (str_detect(variable_of_interest_qt, "(1.0)|(01)|(1$)|(1\\D)") == TRUE) {
       pm_val <- 1.0
@@ -1122,6 +1122,7 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
       print("PM unit undetermined")
     }
     lab_fill <- parse(text = paste0('PM[', pm_val, ']~"("', lab_unit,'"):"'))
+    lab_unit <- "units"
     #bquote(PM[.(pm_val)]~"("*mu*"g/"*m^3*")")
   }
   
@@ -1161,33 +1162,46 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
                          round(val_max, digits = digits),
                          " ", lab_unit, ".")
   
-    # If manually applying a max filter value
+  # If manually applying a max filter value
   if (is.na(cap_value) == FALSE) {
-    # Replacing the values above the set max to be NA so that they will be colored differently on the map
-    dataset <- dataset %>% 
-      mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>{{cap_value}}), NA))
+    # Getting number of rows at or above the cap
+    nrow_hi <- dataset %>% 
+      filter({{variable_of_interest}} >= cap_value) %>% 
+      nrow()
     
-    # Updated lab caption to include the filter
-    lab_subtitle <- paste0("Color scale manually capped at ",
-                           cap_value, " units; all higher values colored ", cap_color,
-                           ".\n", lab_subtitle)
-    
-    # Feedback
-    print(paste("Values greater than",
-                {{cap_value}},
-                "in",
-                variable_of_interest_qt,
-                "will be colored",
-                cap_color))
-    
-    cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
-                        color = guide_legend(
-                          title = paste0(cap_value, "+"),
-                          order = 2,
-                          title.position = "bottom",
-                          title.theme = element_text(size = 10),
-                          override.aes=list(color = cap_color, fill = cap_color)
-                        ))
+    if ((nrow_hi > 0) == TRUE) {
+      # Replacing the values above the set max to be NA so that they will be colored differently on the map
+      dataset <- dataset %>% 
+        mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>={{cap_value}}), NA))
+      
+      # Updated lab caption to include the filter
+      lab_subtitle <- paste0("Color scale manually capped at ",
+                             cap_value, " units; all higher values colored ", cap_color,
+                             ".\n", lab_subtitle)
+      
+      # Feedback
+      print(paste("Values greater than or equal to",
+                  {{cap_value}},
+                  "in",
+                  variable_of_interest_qt,
+                  "will be colored",
+                  cap_color))
+      
+      cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                          color = guide_legend(
+                            title = paste0(cap_value, "+"),
+                            order = 2,
+                            title.position = "bottom",
+                            title.theme = element_text(size = 10),
+                            override.aes = list(color = cap_color, fill = cap_color)
+                          ))
+    } else {
+      print(paste0("No values greater than or equal to ",
+                   {{cap_value}},
+                   " found in ",
+                   variable_of_interest_qt,
+                   "; color cap will not be applied."))
+    }
   }
   
   # Expanding axis to allow monitor labels to be closer to the data
