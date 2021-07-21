@@ -265,7 +265,8 @@ data_hourly %>%
   ) %>% 
   distinct() %>% 
   ggplot(aes(x = date_hour, y = epa_2021)) +
-  facet_grid(label~.) +
+  facet_wrap(~label) +
+  # facet_grid(label~.) +
   geom_line(
     data = data_hourly %>% drop_na(epa_2021),
     color = "gray",
