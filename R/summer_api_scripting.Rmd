@@ -1295,3 +1295,200 @@ heatmap_cross(data_hourly, epa_2021)
 heatmap_cross(data_daily, temperature)
 heatmap_cross(data_diurnal, epa_2021)
 ```
+
+
+```{r viz_function_ts}
+ts_line <- function(dataset, variable_of_interest, include_avg = TRUE,
+                    arrangement = "NULL",
+                    label = c(""), location_data = data_meta, digits = 2){
+  
+  # Dropping NA values from the variable of interest
+  dataset <- dataset %>% 
+    rename("var" = {{variable_of_interest}}) %>% 
+    drop_na(var)
+  
+  location_data <- location_data %>% 
+    inner_join((dataset %>% distinct(site_id)))
+    # mutate(label = make.unique(label, sep = " "))
+  
+  variable_of_interest_qt <- deparse(substitute(variable_of_interest))
+  
+  # Expanding axis to allow monitor labels to be closer to the data
+  options_expand <- expansion(mult = c(0.01, 0.01))
+  x_angle <- 30
+  
+  # Setting axis breaks based on the minimum time unit in the data set
+  if ("datetime" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- "\nacross time, unaveraged"
+    dataset <- dataset %>% rename(timestamp = datetime)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("date_hour" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- "\nacross time, averaged hourly by day"
+    dataset <- dataset %>% rename(timestamp = date_hour)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("date" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- "\nacross time, averaged by day"
+    dataset <- dataset %>% rename(timestamp = date)
+    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("hour" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- "\nacross time, averaged by hour of day"
+    dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
+    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
+    x_angle <- 45
+    print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
+    print("Dates in the caption will default to the inputted start and end dates")
+    date_in_set <- FALSE
+  } else { stop("INPUT ERROR: No time-based variables found!") }
+  
+  input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
+  
+  extrema <- dataset %>% 
+    left_join({{location_data}}) %>% 
+    filter(str_detect(label, input_labels)) %>%
+    select(site_id, label, timestamp, var) %>% 
+    group_by(site_id) %>% 
+    mutate(
+      max = case_when(var == max(var, na.rm=TRUE) ~ var),
+      min = case_when(var == min(var, na.rm=TRUE) ~ var)
+    ) %>% 
+    distinct()
+  
+  label_order <- location_data %>% 
+    select(site_id, label, latitude) %>% 
+    distinct() %>% 
+    mutate(label = fct_reorder(as.factor(label), desc(latitude))) %>% 
+    pull(label)
+  
+  if(include_avg == TRUE){
+    extrema_avg <- dataset %>% 
+      ungroup() %>% 
+      select(timestamp, var) %>% 
+      group_by(timestamp) %>% 
+      summarize(var = mean(var, na.rm = TRUE)) %>% 
+      mutate(
+        max = case_when(var == max(var, na.rm=TRUE) ~ var),
+        min = case_when(var == min(var, na.rm=TRUE) ~ var)
+      ) %>% 
+      mutate(
+        label = "Average",
+        site_id = "Averages"
+      ) %>% 
+      distinct()
+    
+    extrema <- rbind(extrema, extrema_avg)
+    
+    # Appending the "average" label onto the set
+    label_order <- fct_inorder(c(levels(label_order), "Average"))
+    
+    print("Average data added.")
+    
+  } else {
+    label_order <- fct_inorder(levels(label_order))
+    print("No averages will be added.")
+  }
+  
+  
+  label_digits <- paste0("%.", deparse(substitute(digits)), "f")
+  
+  rounding <- function(var, input_digits = digits) {
+    as.character(
+      sprintf(
+        label_digits,
+        round({{var}}, digits = input_digits)
+      )
+    )
+  }
+  
+  if (arrangement == "column" | arrangement == "rows") {
+    facet <- facet_grid(label~.)
+    print("Charts will be arranged in a single column (multiple rows).")
+  # } else if (arrangement == "row" | arrangement == "columns") {
+  #   facet <- facet_grid(.~label)
+  #   print("Charts will be arranged in a single row (multiple columns).")
+  } else {
+    facet <- facet_wrap(~label)
+    print("Charts will be arranged in multiple rows and columns.")
+  }
+  
+  dataset %>% 
+    select(timestamp) %>% 
+    crossing(label = as.character(label_order)) %>% 
+    left_join(extrema) %>%
+    mutate(label = factor(label, label_order)) %>%
+    drop_na(var) %>%
+    mutate(
+      max = case_when(!is.na(max) ~ rounding(max)),
+      min = case_when(!is.na(min) ~ rounding(min))
+    ) %>% 
+    ggplot(aes(x = timestamp, y = var)) +
+    facet +
+    geom_line(
+      data = dataset %>% drop_na(var),
+      color = "gray",
+      alpha = 0.5,
+      aes(group = site_id)
+    ) +
+    geom_line(
+      color = "black",
+      data = . %>% filter(site_id!="Averages")
+    ) +
+    geom_line(
+      color = "darkgreen",
+      data = . %>% filter(site_id=="Averages")
+    ) +
+    geom_point(
+      data = . %>% filter(!is.na(max)),
+      color = "darkorange",
+      shape = 1
+    ) +
+    geom_point(
+      data = . %>% filter(!is.na(min)),
+      color = "royalblue",
+      shape = 1
+    ) +
+    geom_text_repel(
+      data = . %>% mutate(max = replace_na(max, "")),
+      min.segment.length = 0,
+      box.padding = 0.5,
+      max.overlaps = Inf,
+      color = "darkorange",
+      aes(label = max)
+    ) +
+    geom_text_repel(
+      data = . %>% mutate(min = replace_na(min, "")),
+      min.segment.length = 0,
+      box.padding = 0.5,
+      max.overlaps = Inf,
+      color = "royalblue",
+      aes(label = min)
+    ) +
+    theme_minimal() +
+    x_scale +
+    theme(
+      legend.position = "bottom",
+      panel.grid = element_blank(),
+      panel.border = element_blank(),
+      axis.text.x = element_text(angle = x_angle, hjust = 1),
+      axis.title = element_blank(),
+      axis.ticks.x = element_line()
+    ) +
+    # theme(axis.text.x = element_text(angle = 30, hjust = 1), axis.ticks.x = element_line()) +
+    labs(
+      x = "Time",
+      y = "EPA-corrected PM2.5",
+      title = "PM2.5 values over time",
+      subtitle = "Maximum and minimum values by monitor are marked by orange and blue text, respectively.",
+      caption = "Black lines indicate the monitor of interest (labelled on the right).
+      Gray lines represent individual monitor time series.
+      The green line at the bottom represents the average by hour."
+    )
+  
+}
+```
+
