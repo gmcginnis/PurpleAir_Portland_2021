@@ -26,6 +26,7 @@ library(AirSensor)
 library(lubridate)
 library(ggmap)
 library(viridis)
+library(ggrepel)
 ```
 
 ```{r inputs}
@@ -1086,82 +1087,17 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     # Selecting only variables of interest to save space
     select(site_id, label, DEVICE_LOCATIONTYPE)
   
-  # Default plot labels
-  lab_title <- "Heatmap of"
-  lab_title_val <- variable_of_interest_qt
-  lab_fill <- "Unit:"
-  lab_unit <- "units"
+  unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt, cap_color = cap_color,
+                                 lab_title = "Heatmap of")
+  
+  lab_title <- unit_results$lab_title
+  lab_title_val <- unit_results$lab_title_val
+  lab_subtitle <- unit_results$lab_subtitle
+  lab_fill <- unit_results$lab_fill
+  fill_colors <- unit_results$fill_colors
   
   cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
                       color = "none")
-  
-  # Default color scale settings. Limits set minimum to 0 so that the color scale will always start at 0 regardless of min in data
-  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = cap_color)
-  
-  if (str_detect(variable_of_interest_qt, "pm") == TRUE) {
-    lab_title_val <- "Particulate Matter (PM)"
-    # lab_unit <- expression(paste(mu, "g/m"^3))
-    #lab_unit <- expression(mu*"g/m"^3)
-    # lab_unit <- "µg/m^3"
-    lab_unit <- '*mu*"g/m"^3*'
-    
-    if (str_detect(variable_of_interest_qt, "(1.0)|(01)|(1$)|(1\\D)") == TRUE) {
-      pm_val <- 1.0
-      # lab_fill <- expression(paste("PM"[1.0]*" (", mu, "g/m"^3*"):"))
-      print("PM 1.0 detected")
-    } else if (str_detect(variable_of_interest_qt, "(25)|(2.5)") == TRUE) {
-      pm_val <- 2.5
-      # lab_fill <- expression(paste("PM"[2.5]*" (", mu, "g/m"^3*"):"))
-      print("PM 2.5 detected")
-    } else if (str_detect(variable_of_interest_qt, "(10)") == TRUE) {
-      pm_val <- 10
-      # lab_fill <- expression(paste("PM"[10]*" (", mu, "g/m"^3*"):"))
-      print("PM 10 detected")
-    } else {
-      pm_val <- NULL
-      # lab_fill <- expression(paste("PM (", mu, "g/m"^3*"):"))
-      print("PM unit undetermined")
-    }
-    lab_fill <- parse(text = paste0('PM[', pm_val, ']~"("', lab_unit,'"):"'))
-    lab_unit <- "units"
-    #bquote(PM[.(pm_val)]~"("*mu*"g/"*m^3*")")
-  }
-  
-  # Adjusting color scale and labels if the variable of interest is internal temperature
-  if (str_detect(variable_of_interest_qt, "temp") == TRUE) {
-    lab_title_val <- "internal temperature"
-    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
-    print("Temperature detected as variable of interest; adjusting labels accordingly")
-    lab_unit <- "\u00B0F"
-    
-    if (str_detect(variable_of_interest_qt, "_c") == TRUE) {
-      lab_unit <- "\u00B0C"
-      print("Temperature detected to be in Celsius")
-    } else { print("Temperature assumed to be in Fahrenheit") }
-    
-    lab_fill <- paste0("Internal temperature (", lab_unit, "):")
-  }
-  
-  # Adjusting color scale and labels if the variable of interest is RH
-  if (str_detect(variable_of_interest_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
-    lab_title_val <- "humidity"
-    lab_unit <- "%"
-    lab_fill <- paste0("Relative humidity (", lab_unit, "):")
-    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9)
-    print("RH detected as variable of interest; adjusting labels accordingly")
-  }
-  
-  # Getting min and max values from the data set
-  val_min <- dataset %>% select({{variable_of_interest}}) %>% min(na.rm = TRUE)
-  val_max <- dataset %>% select({{variable_of_interest}}) %>% max(na.rm = TRUE)
-  
-  lab_subtitle <- paste0("Variable plotted: ",
-                         variable_of_interest_qt,
-                         ", with a reported range of ",
-                         round(val_min, digits = digits),
-                         " to ",
-                         round(val_max, digits = digits),
-                         " ", lab_unit, ".")
   
   # If manually applying a max filter value
   if (is.na(cap_value) == FALSE) {
@@ -1205,53 +1141,15 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
     }
   }
   
-  # Expanding axis to allow monitor labels to be closer to the data
-  options_expand <- expansion(mult = c(0.01, 0.01))
-  x_angle <- 30
+  scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
   
-  # Setting axis breaks based on the minimum time unit in the data set
-  if ("datetime" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- "\nacross time, unaveraged"
-    dataset <- dataset %>% rename(timestamp = datetime)
-    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("date_hour" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- "\nacross time, averaged hourly by day"
-    dataset <- dataset %>% rename(timestamp = date_hour)
-    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("date" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- "\nacross time, averaged by day"
-    dataset <- dataset %>% rename(timestamp = date)
-    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("hour" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- "\nacross time, averaged by hour of day"
-    dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
-    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
-    x_angle <- 45
-    print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
-    print("Dates in the caption will default to the inputted start and end dates")
-    date_in_set <- FALSE
-  } else { stop("INPUT ERROR: No time-based variables found!") }
+  dataset <- scale_results$dataset
+  lab_title_sub <- scale_results$lab_title_sub
+  x_angle <- scale_results$x_angle
+  x_scale <- scale_results$x_scale
+  lab_caption <- scale_results$lab_caption
   
-  if (date_in_set == TRUE) {
-    start_date <- min(date(dataset$timestamp))
-    end_date <- max(date(dataset$timestamp))
-  } else {
-    start_date <- as.Date(start_date)
-    end_date <- as.Date(end_date)
-  }
-  # Formatting dates
-  start_date <- format(start_date, "%d %b %Y")
-  end_date <- format(end_date, "%d %b %Y")
-  
-  lab_caption <- paste0("Data from PurpleAir, from ",
-                        start_date, " to ", end_date, ".",
-                        "\nMonitors are arranged north to south in their respective groups.")
+  lab_caption <- paste0(lab_caption, "\nMonitors are arranged north to south in their respective groups.")
   
   
   dataset %>% 
@@ -1293,58 +1191,58 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
 heatmap_cross(data_pm25, pm25_atm, cap_value = 50, cap_color = green)
 heatmap_cross(data_hourly, epa_2021)
 heatmap_cross(data_daily, temperature)
-heatmap_cross(data_diurnal, epa_2021)
+heatmap_cross(data_diurnal, pm25_atm, cap_value = 15)
 ```
 
 
 ```{r viz_function_ts}
-ts_line <- function(dataset, variable_of_interest, include_avg = TRUE,
-                    arrangement = "NULL",
-                    label = c(""), location_data = data_meta, digits = 2){
-  
-  # Dropping NA values from the variable of interest
-  dataset <- dataset %>% 
-    rename("var" = {{variable_of_interest}}) %>% 
-    drop_na(var)
-  
-  location_data <- location_data %>% 
-    inner_join((dataset %>% distinct(site_id)))
-    # mutate(label = make.unique(label, sep = " "))
+ts_line <- function(dataset, variable_of_interest,
+                    single_column = FALSE, include_avg = TRUE,
+                    in_out = "both",
+                    label = c(""),
+                    digits = 2, label_length = 10,
+                    location_data = data_meta,
+                    start_date = input_startdate, end_date = input_enddate){
   
   variable_of_interest_qt <- deparse(substitute(variable_of_interest))
   
-  # Expanding axis to allow monitor labels to be closer to the data
-  options_expand <- expansion(mult = c(0.01, 0.01))
-  x_angle <- 30
+  # Dropping NA values from the variable of interest
+  dataset <- dataset %>% 
+    mutate("var" = {{variable_of_interest}}) %>% 
+    drop_na(var)
   
-  # Setting axis breaks based on the minimum time unit in the data set
-  if ("datetime" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- "\nacross time, unaveraged"
-    dataset <- dataset %>% rename(timestamp = datetime)
-    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("date_hour" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- "\nacross time, averaged hourly by day"
-    dataset <- dataset %>% rename(timestamp = date_hour)
-    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("date" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- "\nacross time, averaged by day"
-    dataset <- dataset %>% rename(timestamp = date)
-    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("hour" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- "\nacross time, averaged by hour of day"
-    dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
-    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
-    x_angle <- 45
-    print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
-    print("Dates in the caption will default to the inputted start and end dates")
-    date_in_set <- FALSE
-  } else { stop("INPUT ERROR: No time-based variables found!") }
+  location_data <- location_data %>% 
+    inner_join((dataset %>% distinct(site_id))) %>% 
+    mutate(label = make.unique(label, sep = " "))
+  
+  if (single_column == TRUE) {
+    facet <- facet_grid(label~.)
+    print("Charts will be arranged in a single column (multiple rows).")
+    location_data <- location_data %>% mutate(label = str_wrap(label, label_length))
+    print("Line breaks added to labels")
+  } else {
+    facet <- facet_wrap(~label)
+    print("Charts will be arranged in multiple rows and columns.")
+  }
+  
+  scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  
+  dataset <- scale_results$dataset
+  lab_title_sub <- scale_results$lab_title_sub
+  x_angle <- scale_results$x_angle
+  x_scale <- scale_results$x_scale
+  lab_dates <- scale_results$lab_caption
+  lab_caption <- paste("Black lines indiciate the data for a specific monitor of interest.",
+                       "Gray lines represent data from all monitors.",
+                       "\nMaximum and minimum values by monitor are marked by orange and blue text, respectively.")
+  
+  unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt, cap_color = NA,
+                                 lab_title = "Timeseries of")
+  
+  lab_title <- unit_results$lab_title
+  lab_title_val <- unit_results$lab_title_val
+  lab_subtitle <- unit_results$lab_subtitle
+  y_lab <- unit_results$lab_fill
   
   input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
   
@@ -1354,16 +1252,25 @@ ts_line <- function(dataset, variable_of_interest, include_avg = TRUE,
     select(site_id, label, timestamp, var) %>% 
     group_by(site_id) %>% 
     mutate(
-      max = case_when(var == max(var, na.rm=TRUE) ~ var),
-      min = case_when(var == min(var, na.rm=TRUE) ~ var)
+      max = case_when(var == max(var, na.rm = TRUE) ~ var),
+      min = case_when(var == min(var, na.rm = TRUE) ~ var),
+      date = date(timestamp)
     ) %>% 
-    distinct()
+    distinct() %>% 
+    group_by(site_id, date) %>% 
+    mutate_at(vars(max, min), funs(replace(., duplicated(.), NA))) %>% 
+    select(!date)
   
   label_order <- location_data %>% 
     select(site_id, label, latitude) %>% 
     distinct() %>% 
     mutate(label = fct_reorder(as.factor(label), desc(latitude))) %>% 
     pull(label)
+  
+  if (length(unique(extrema$site_id)) == 1) {
+    include_avg <- FALSE
+    print("One monitor detected. Not plotting average.")
+  }
   
   if(include_avg == TRUE){
     extrema_avg <- dataset %>% 
@@ -1376,7 +1283,7 @@ ts_line <- function(dataset, variable_of_interest, include_avg = TRUE,
         min = case_when(var == min(var, na.rm=TRUE) ~ var)
       ) %>% 
       mutate(
-        label = "Average",
+        label = "AVERAGE",
         site_id = "Averages"
       ) %>% 
       distinct()
@@ -1384,9 +1291,11 @@ ts_line <- function(dataset, variable_of_interest, include_avg = TRUE,
     extrema <- rbind(extrema, extrema_avg)
     
     # Appending the "average" label onto the set
-    label_order <- fct_inorder(c(levels(label_order), "Average"))
+    label_order <- fct_inorder(c(levels(label_order), "AVERAGE"))
     
     print("Average data added.")
+    
+    lab_caption <- paste(lab_caption, "\nThe green graph represents the moving average of all monitors in the data set.")
     
   } else {
     label_order <- fct_inorder(levels(label_order))
@@ -1405,17 +1314,6 @@ ts_line <- function(dataset, variable_of_interest, include_avg = TRUE,
     )
   }
   
-  if (arrangement == "column" | arrangement == "rows") {
-    facet <- facet_grid(label~.)
-    print("Charts will be arranged in a single column (multiple rows).")
-  # } else if (arrangement == "row" | arrangement == "columns") {
-  #   facet <- facet_grid(.~label)
-  #   print("Charts will be arranged in a single row (multiple columns).")
-  } else {
-    facet <- facet_wrap(~label)
-    print("Charts will be arranged in multiple rows and columns.")
-  }
-  
   dataset %>% 
     select(timestamp) %>% 
     crossing(label = as.character(label_order)) %>% 
@@ -1428,6 +1326,7 @@ ts_line <- function(dataset, variable_of_interest, include_avg = TRUE,
     ) %>% 
     ggplot(aes(x = timestamp, y = var)) +
     facet +
+    # geom_hline(yintercept = 0, linetype = "longdash", alpha = 0.5) +
     geom_line(
       data = dataset %>% drop_na(var),
       color = "gray",
@@ -1471,24 +1370,169 @@ ts_line <- function(dataset, variable_of_interest, include_avg = TRUE,
     theme_minimal() +
     x_scale +
     theme(
+      panel.spacing.x = unit(5, "mm"),
       legend.position = "bottom",
       panel.grid = element_blank(),
       panel.border = element_blank(),
       axis.text.x = element_text(angle = x_angle, hjust = 1),
-      axis.title = element_blank(),
+      axis.title.x = element_blank(),
       axis.ticks.x = element_line()
     ) +
-    # theme(axis.text.x = element_text(angle = 30, hjust = 1), axis.ticks.x = element_line()) +
     labs(
+      title = paste(lab_title, lab_title_val, lab_title_sub),
+      subtitle = paste(lab_subtitle, lab_dates, sep = "\n"),
+      caption = lab_caption,
       x = "Time",
-      y = "EPA-corrected PM2.5",
-      title = "PM2.5 values over time",
-      subtitle = "Maximum and minimum values by monitor are marked by orange and blue text, respectively.",
-      caption = "Black lines indicate the monitor of interest (labelled on the right).
-      Gray lines represent individual monitor time series.
-      The green line at the bottom represents the average by hour."
+      y = y_lab
     )
   
 }
 ```
 
+```{r}
+settings_dt_scale <- function(dataset, start_date, end_date) {
+  # Expanding axis to allow monitor labels to be closer to the data
+  options_expand <- expansion(mult = c(0.01, 0.01))
+  x_angle <- 30
+  lab_title_sub <- "across time"
+  
+  # Setting axis breaks based on the minimum time unit in the data set
+  if ("datetime" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- paste0(lab_title_sub, ", unaveraged")
+    dataset <- dataset %>% rename(timestamp = datetime)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("date_hour" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- paste0(lab_title_sub, ", averaged hourly by day")
+    dataset <- dataset %>% rename(timestamp = date_hour)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("date" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- paste0(lab_title_sub, ", averaged by day")
+    dataset <- dataset %>% rename(timestamp = date)
+    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("hour" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- paste0(lab_title_sub, ", averaged by hour of day")
+    dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
+    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
+    x_angle <- 45
+    print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
+    print("Dates in the caption will default to the inputted start and end dates")
+    date_in_set <- FALSE
+  } else { stop("INPUT ERROR: No time-based variables found!") }
+  
+  if (date_in_set == TRUE) {
+    start_date <- min(date(dataset$timestamp))
+    end_date <- max(date(dataset$timestamp))
+  } else {
+    start_date <- as.Date(start_date)
+    end_date <- as.Date(end_date)
+  }
+  # Formatting dates
+  start_date <- format(start_date, "%d %b %Y")
+  end_date <- format(end_date, "%d %b %Y")
+  
+  lab_caption <- paste0("Data from ", start_date, " to ", end_date, ".")
+  
+  return(list(
+    dataset = dataset,
+    lab_title_sub = lab_title_sub,
+    x_angle = x_angle,
+    x_scale = x_scale,
+    date_in_set = date_in_set,
+    start_date = start_date,
+    end_date = end_date,
+    lab_caption = lab_caption
+  ))
+}
+```
+
+```{r}
+settings_units <- function(dataset, var, cap_color, digits, lab_title = "Graph of",
+                           lab_fill = "Units", lab_unit = "units") {
+  
+  variable_of_interest_qt <- var
+  
+  # Defaults
+  lab_title_val <- variable_of_interest_qt
+  # y_line <- NULL
+  # Limits set minimum to 0 so that the color scale will start at 0 regardless of min in data
+  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = cap_color)
+  
+  if (str_detect(variable_of_interest_qt, "pm") == TRUE) {
+    lab_title_val <- "Particulate Matter (PM)"
+    # lab_unit <- expression(paste(mu, "g/m"^3))
+    #lab_unit <- expression(mu*"g/m"^3)
+    # lab_unit <- "µg/m^3"
+    lab_unit <- '*mu*"g/m"^3*'
+    
+    if (str_detect(variable_of_interest_qt, "(1.0)|(01)|(1$)|(1\\D)") == TRUE) {
+      pm_val <- 1.0
+      print("PM 1.0 detected")
+    } else if (str_detect(variable_of_interest_qt, "(25)|(2.5)") == TRUE) {
+      pm_val <- 2.5
+      print("PM 2.5 detected")
+    } else if (str_detect(variable_of_interest_qt, "(10)") == TRUE) {
+      pm_val <- 10
+      print("PM 10 detected")
+    } else {
+      pm_val <- NULL
+      print("PM unit undetermined")
+    }
+    lab_fill <- parse(text = paste0('PM[', pm_val, ']~"("', lab_unit,'")"'))
+    lab_unit <- "units"
+    # y_line <- geom_hline(yintercept = 0, linetype = "longdash", alpha = 0.5)
+    #bquote(PM[.(pm_val)]~"("*mu*"g/"*m^3*")")
+  }
+  
+  # Adjusting color scale and labels if the variable of interest is internal temperature
+  if (str_detect(variable_of_interest_qt, "temp") == TRUE) {
+    lab_title_val <- "internal temperature"
+    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15, na.value = cap_color)
+    print("Temperature detected as variable of interest; adjusting labels accordingly")
+    lab_unit <- "\u00B0F"
+    
+    if (str_detect(variable_of_interest_qt, "_c") == TRUE) {
+      lab_unit <- "\u00B0C"
+      print("Temperature detected to be in Celsius")
+    } else { print("Temperature assumed to be in Fahrenheit") }
+    
+    lab_fill <- paste0("Internal temperature (", lab_unit, ")")
+  }
+  
+  # Adjusting color scale and labels if the variable of interest is RH
+  if (str_detect(variable_of_interest_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
+    lab_title_val <- "humidity"
+    lab_unit <- "%"
+    lab_fill <- paste0("Relative humidity (", lab_unit, ")")
+    # y_line <- geom_hline(yintercept = c(0,100), linetype = "longdash", alpha = 0.5)
+    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9, na.value = cap_color)
+    print("RH detected as variable of interest; adjusting labels accordingly")
+  }
+  
+  # Getting min and max values from the data set
+  val_min <- dataset %>% select(variable_of_interest_qt) %>% min(na.rm = TRUE)
+  val_max <- dataset %>% select(variable_of_interest_qt) %>% max(na.rm = TRUE)
+  
+  lab_subtitle <- paste0("Variable plotted: ",
+                         variable_of_interest_qt,
+                         ", with a reported range of ",
+                         round(val_min, digits = digits),
+                         " to ",
+                         round(val_max, digits = digits),
+                         " ", lab_unit, ".")
+  
+  return(list(
+    # y_line = y_line,
+    lab_title = lab_title,
+    lab_title_val = lab_title_val,
+    lab_subtitle = lab_subtitle,
+    lab_fill = lab_fill,
+    fill_colors = fill_colors
+  ))
+}
+```
