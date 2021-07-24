@@ -736,6 +736,11 @@ map <- leaflet(data_full) %>%
 pal <- colorNumeric(palette = "viridis", domain = data_full$epa_2021)
 stroke_pal <- colorFactor(palette = "RdYlBu", domain = data_full$DEVICE_LOCATIONTYPE)
 
+data_labs <- data_full %>% 
+  select(!c(longitude, latitude)) %>% 
+  mutate_if(is.numeric, ~rounding_w_zeroes(., input_digits=2)) %>% 
+  left_join(data_meta)
+
 pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longitude,")",
                    "<br><b>Location:</b> ", data_full$DEVICE_LOCATIONTYPE,
                   "<br><b>Internal temperature (\u00B0F):</b> ", data_full$temperature,
@@ -801,6 +806,7 @@ map %>%
     options = layersControlOptions(collapsed = FALSE)
   )
 ```
+
 
 ```{r single_leaflet}
 data_full <- data_daily %>% 

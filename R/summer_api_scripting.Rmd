@@ -58,8 +58,9 @@ input_north <- 45.6
 
 # Labels of monitors to include. If NULL/unspecified, all monitors will be included.
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
-# Example format (capitalization matters!): input_labels <- c("se", "SE", "Se", "STAR", "PSU")
-# input_labels <- "Indigo"
+# Example format below. Capitalization matters!
+# \\b is added where we want only values that report those words on their own (ex. STAR-LAB and not STARSYSTEM1)
+# input_labels <- c("se", "SE", "Se", "\\bSTAR\\b", "\\bPSU\\b")
 input_labels <- c("se", "SE", "Se", "STAR", "PSU")
 
 # Optional grouping settings
@@ -917,11 +918,13 @@ map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afterno
 ```
 
 ```{r viz_function_single_heatmap}
-heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
+heatmap_single <- function(site_of_interest, variable_of_interest, dataset = data_hourly,
                            data_labels = TRUE, digits = 2, date_breaks = "1 day",
                            location_data = data_meta){
   
   if ("date_hour" %in% colnames(dataset) == FALSE) { stop("ERROR: Inputted data set is not hourly by day") }
+  
+  variable_of_interest_qt <- deparse(substitute(variable_of_interest))
   
   if (deparse(substitute(variable_of_interest)) %in% colnames(dataset) == FALSE) {
     dataset %>%
@@ -959,38 +962,23 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
     stop("ERROR: More than one site selected. Please use a more precise string argument; matching values are listed above.")
   }
   
-  min_date <- format(min(date(temp_df$date_hour)), "%d %b %Y")
-  max_date <- format(max(date(temp_df$date_hour)), "%d %b %Y")
+  unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt, cap_color = NA,
+                                 lab_title = "Heatmap of")
   
-  lab_title <- expression("Heatmap of PM"[2.5]*" values across time")
-  lab_subtitle <- paste0("PurpleAir data of monitor \"", unique(temp_df$label), "\"\nfrom ",
-                         min_date, " to ", max_date,
-                         ". Data plotted: ", deparse(substitute(variable_of_interest)))
-  # lab_subtitle <- paste0("Data from PurpleAir. Monitor selected: \"", unique(temp_df$label),
-  #                       "\". Data plotted: ", deparse(substitute(variable_of_interest)))
-  lab_fill <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
-  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA))
+  lab_title <- unit_results$lab_title
+  lab_title_val <- unit_results$lab_title_val
+  lab_subtitle <- paste0("Monitor selected: \"", temp_df %>% pull(label),
+                         "\" (ID: ", temp_df %>% pull(site_id),").\n",
+                        unit_results$lab_subtitle)
+  lab_fill <- unit_results$lab_fill
+  fill_colors <- unit_results$fill_colors
   
-  if (str_detect(deparse(substitute(variable_of_interest)), "temp") == TRUE) {
-    lab_title <- paste("Heatmap of internal temperature values across time")
-    lab_fill <- "Internal temperature (\u00B0F):"
-    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15)
-    print("Temperature detected as variable of interest; adjusting labels accordingly")
-    
-    if (str_detect(deparse(substitute(variable_of_interest)), "temperature_c") == TRUE) {
-      lab_fill <- "Internal temperature (\u00B0C):"
-      print("Temperature detected to be in Celsius")
-    }
-  }
-  if (str_detect(deparse(substitute(variable_of_interest)), "humid") == TRUE) {
-    lab_title <- paste("Heatmap of RH values across time")
-    lab_fill <- "Relative humidity (%):"
-    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.95, begin = 0.15)
-    print("RH detected as variable of interest; adjusting labels accordingly")
-  }
+  scale_results <- settings_dt_scale(dataset = dataset, start_date = NA, end_date = NA)
   
-  # Allows for ending 0 when rounding
-  label_digits <- paste0("%.", deparse(substitute(digits)), "f")
+  dataset <- scale_results$dataset
+  lab_title_sub <- scale_results$lab_title_sub
+  lab_caption <- scale_results$lab_caption
+  
   if (data_labels == TRUE) {
     data_labels <- geom_text()
   } else { data_labels <- NULL }
@@ -1000,7 +988,7 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
     ggplot(aes(x = date(date_hour),
                y = hour(date_hour),
                fill = {{variable_of_interest}},
-               label = as.character(sprintf(label_digits, round({{variable_of_interest}}, digits = digits)))
+               label = rounding_w_zeroes({{variable_of_interest}}, digits)
     )) +
     geom_tile() +
     fill_colors +
@@ -1022,9 +1010,10 @@ heatmap_single <- function(dataset, site_of_interest, variable_of_interest,
       axis.ticks.x = element_line()
     ) +
     labs(
-      title = lab_title,
+      title = paste(lab_title, lab_title_val, lab_title_sub),
       subtitle = lab_subtitle,
       fill = lab_fill,
+      caption = lab_caption,
       y = "Hour of the day"
     ) + 
     guides(fill = guide_colorbar(barwidth = 10))
@@ -1197,8 +1186,8 @@ heatmap_cross(data_diurnal, pm25_atm, cap_value = 15)
 
 ```{r viz_function_ts}
 ts_line <- function(dataset, variable_of_interest,
+                    add_points = FALSE,
                     single_column = FALSE, include_avg = TRUE,
-                    in_out = "both",
                     label = c(""),
                     digits = 2, label_length = 10,
                     location_data = data_meta,
@@ -1242,7 +1231,9 @@ ts_line <- function(dataset, variable_of_interest,
   lab_title <- unit_results$lab_title
   lab_title_val <- unit_results$lab_title_val
   lab_subtitle <- unit_results$lab_subtitle
-  y_lab <- unit_results$lab_fill
+  lab_fill <- unit_results$lab_fill
+  y_lab <- lab_fill
+  fill_colors <- unit_results$fill_colors
   
   input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
   
@@ -1302,17 +1293,10 @@ ts_line <- function(dataset, variable_of_interest,
     print("No averages will be added.")
   }
   
-  
-  label_digits <- paste0("%.", deparse(substitute(digits)), "f")
-  
-  rounding <- function(var, input_digits = digits) {
-    as.character(
-      sprintf(
-        label_digits,
-        round({{var}}, digits = input_digits)
-      )
-    )
-  }
+  if (add_points == TRUE) {
+    data_points <- geom_point(aes(fill = var), alpha = 0.7, shape = 21, stroke = 0)
+    print("Data points will be added.")
+  } else { data_points <- NULL }
   
   dataset %>% 
     select(timestamp) %>% 
@@ -1321,26 +1305,28 @@ ts_line <- function(dataset, variable_of_interest,
     mutate(label = factor(label, label_order)) %>%
     drop_na(var) %>%
     mutate(
-      max = case_when(!is.na(max) ~ rounding(max)),
-      min = case_when(!is.na(min) ~ rounding(min))
+      max = case_when(!is.na(max) ~ rounding_w_zeroes(max, digits)),
+      min = case_when(!is.na(min) ~ rounding_w_zeroes(min, digits))
     ) %>% 
     ggplot(aes(x = timestamp, y = var)) +
     facet +
     # geom_hline(yintercept = 0, linetype = "longdash", alpha = 0.5) +
     geom_line(
       data = dataset %>% drop_na(var),
+      aes(group = site_id),
       color = "gray",
-      alpha = 0.5,
-      aes(group = site_id)
+      alpha = 0.5
     ) +
     geom_line(
-      color = "black",
-      data = . %>% filter(site_id!="Averages")
+      data = . %>% filter(site_id!="Averages"),
+      color = "black"
     ) +
     geom_line(
-      color = "darkgreen",
-      data = . %>% filter(site_id=="Averages")
+      data = . %>% filter(site_id=="Averages"),
+      color = "darkgreen"
     ) +
+    data_points + 
+    fill_colors +
     geom_point(
       data = . %>% filter(!is.na(max)),
       color = "darkorange",
@@ -1353,19 +1339,19 @@ ts_line <- function(dataset, variable_of_interest,
     ) +
     geom_text_repel(
       data = . %>% mutate(max = replace_na(max, "")),
+      aes(label = max),
       min.segment.length = 0,
-      box.padding = 0.5,
+      box.padding = 0.75,
       max.overlaps = Inf,
-      color = "darkorange",
-      aes(label = max)
+      color = "darkorange"
     ) +
     geom_text_repel(
       data = . %>% mutate(min = replace_na(min, "")),
+      aes(label = min),
       min.segment.length = 0,
-      box.padding = 0.5,
+      box.padding = 0.75,
       max.overlaps = Inf,
-      color = "royalblue",
-      aes(label = min)
+      color = "royalblue"
     ) +
     theme_minimal() +
     x_scale +
@@ -1383,7 +1369,8 @@ ts_line <- function(dataset, variable_of_interest,
       subtitle = paste(lab_subtitle, lab_dates, sep = "\n"),
       caption = lab_caption,
       x = "Time",
-      y = y_lab
+      y = y_lab,
+      fill = lab_fill
     )
   
 }
@@ -1460,7 +1447,7 @@ settings_units <- function(dataset, var, cap_color, digits, lab_title = "Graph o
   # Defaults
   lab_title_val <- variable_of_interest_qt
   # y_line <- NULL
-  # Limits set minimum to 0 so that the color scale will start at 0 regardless of min in data
+  # Color scale will default set to start at 0, regardless of minimum in data
   fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = cap_color)
   
   if (str_detect(variable_of_interest_qt, "pm") == TRUE) {
@@ -1536,3 +1523,65 @@ settings_units <- function(dataset, var, cap_color, digits, lab_title = "Graph o
   ))
 }
 ```
+
+```{r}
+filter_df <- function(dataframe, location_data = data_meta, include = c(""), exclude = c("")) {
+  
+  input_labels <- paste0("(", paste(include, collapse = ")|("), ")")
+  exclude_labels <- paste0("(", paste(exclude, collapse = ")|("), ")")
+  
+  data_meta <- data_meta %>% 
+    filter(str_detect(label, input_labels))
+  
+  if(exclude_labels != "()"){
+    data_meta <- data_meta %>% 
+      filter(!str_detect(label, exclude_labels))
+  }
+  dataframe %>% 
+   filter(site_id %in% (data_meta %>% pull(site_id)))
+}
+```
+
+```{r,eval=FALSE}
+drop_incomplete <- function(dataset) {
+  # Number of values expected for a complete set
+  complete_num <- (dataset %>% 
+                     ungroup() %>% 
+                     count(site_id) %>% 
+                     arrange(desc(n)) %>% 
+                     pull(n))[1]
+  
+  # List of monitors with incomplete sets
+  to_drop <- dataset %>% 
+    ungroup() %>% 
+    count(site_id) %>% 
+    filter(n != complete_num) %>% 
+    pull(site_id)
+  
+  if (to_drop == character(0))
+  
+  # Feedback
+  print("Monitors with incomplete temporal data that will be dropped:")
+  print(paste(to_drop))
+  
+  # Removing incomplete monitors
+  dataset <- dataset %>% 
+    filter(!site_id %in% to_drop)
+  
+  return(dataset)
+}
+```
+
+```{r}
+rounding_w_zeroes <- function(num, input_digits) {
+  input_digits <- {{input_digits}}
+  
+  as.character(
+    sprintf(
+      paste0("%.", deparse(substitute(input_digits)), "f"),
+      round(num, digits = input_digits)
+    )
+  )
+}
+```
+
