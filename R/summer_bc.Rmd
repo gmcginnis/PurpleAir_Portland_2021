@@ -81,11 +81,80 @@ data_bc <- raw_bc_data %>%
     between(BC, 0, 500), #Black carbon in micrograms per cubic meter
     between(RH, 0, 80), #Relative humidity in percent
     between(`T`, 0, 40) #Temperature in deg C
-  ) %>% 
+  )
+
+data_bc_minute <- data_bc %>% 
   mutate(TS = floor_date(TS, unit = "minute")) %>% 
   group_by(file, TS) %>% 
   summarize_if(is.numeric, mean, na.rm = TRUE)
 ```
+
+```{r}
+
+data_bc %>% 
+  filter(!str_detect(file, "-13")) %>% 
+  ungroup() %>% 
+  select(TS, BC) %>% 
+  mutate(name = "BC") %>% 
+  rename(
+    datetime = TS,
+    value = BC
+  ) %>% 
+  rbind((data_pm25 %>% select(datetime, pm25_atm) %>% pivot_longer(where(is.numeric)))) %>% 
+  filter(datetime <= "2021-07-11 11:00:00 PDT") %>% 
+  mutate(hour = hour(datetime)) %>% 
+  group_by(name, hour) %>% 
+  mutate(max = case_when(value == max(value, na.rm = TRUE) ~ value)) %>% 
+  ggplot(aes(datetime, value, color = name,
+             label = paste0(round(max, 2), " (", format(datetime, "%H:%M:%S"), ")"))
+  ) +
+  geom_path(alpha = 0.3) +
+  geom_point(shape = 1, alpha = 0.5) + 
+  geom_point(
+    data = . %>% drop_na(max),
+    color = "black",
+    shape = 4
+  ) +
+  geom_text_repel(
+    data = . %>%
+      select(!max) %>% 
+      filter(
+        str_detect(name, "pm25"),
+        datetime >= "2021-07-10 22:30:00 PDT",
+        datetime <= "2021-07-10 22:59:00 PDT"
+      ) %>% 
+      group_by(hour) %>% 
+      mutate(max = case_when(value == max(value, na.rm = TRUE) ~ value)) %>% 
+      drop_na(max),
+    size = 2.5,
+    color = "black",
+    min.segment.length = 0,
+    nudge_y = 2
+  ) +
+  geom_text_repel(
+    # data = . %>% mutate(max = replace_na(max, "")),
+    data = . %>% drop_na(max) %>% filter(str_detect(name, "pm25")),
+    size = 3,
+    color = "blue",
+    min.segment.length = 0,
+    nudge_y = 2
+  ) +
+  geom_text_repel(
+    data = . %>% drop_na(max) %>% filter(name == "BC"),
+    size = 3,
+    color = "red",
+    min.segment.length = 0
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  scale_x_datetime(breaks = scales::date_breaks("1 hour"), date_labels = "%d %b, %H:%M") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  scale_y_continuous(
+    limits = c(0, NA),
+    breaks = seq(0, 25, by = 5)
+  )
+```
+
 
 ```{r}
 bc <- data_bc %>% 
@@ -160,16 +229,19 @@ data_pm25 %>%
   full_join(bc %>% rename(name = source)) %>% 
   #full_join((data_bc %>% ungroup() %>% select(TS, BC) %>% rename(datetime = TS, value = BC) %>% mutate(name = "BC", source = "BC"))) %>% 
   ggplot(aes(x = datetime, y = value, color = name)) +
-  facet_grid(pollutant~., scales = "free_y") +
+  facet_grid(pollutant~., scales = "free_y", space = "free_y") +
   #stat_smooth(color = "black", alpha = 0.5) +
-  geom_line(alpha = 0.7) +
+  geom_line(alpha = 0.3) +
   geom_point(shape = 1, alpha = 0.5) +
   #stat_smooth(data = subset(full_join(pa, (bc %>% filter(value <= 1))), corr == "BC"), color = "black") +
   # stat_smooth(data = subset(full_join(pa, bc), corr == "BC"), color = "black") +
   theme_bw() +
   theme(legend.position = "bottom") +
   scale_x_datetime(breaks = scales::date_breaks("1 hour"), date_labels = "%d %b, %H:%M") +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  scale_y_continuous(
+    limits = c(0, NA)
+  )
 
 pa %>% 
   rename(PM = value) %>% 
