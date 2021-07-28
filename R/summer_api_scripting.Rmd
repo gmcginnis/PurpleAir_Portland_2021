@@ -19,7 +19,6 @@ devtools::install_github("dkahle/ggmap")
 library(ggmap)
 ```
 
-
 ```{r libraries}
 library(tidyverse)
 library(AirSensor)
@@ -28,6 +27,7 @@ library(ggmap)
 library(viridis)
 library(ggrepel)
 ```
+
 
 ```{r inputs}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
@@ -85,7 +85,6 @@ input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
 input_hour_starts <- c(5, 12, 17, 21)
 # End hours will be automatically generated
 ```
-
 
 
 ```{r getting_pas}
@@ -994,12 +993,12 @@ rounding_w_zeroes <- function(num, input_digits) {
 ```
 
 ```{r function_cap}
-add_cap <- function(dataset, var_qt, cap_color, cap_value) {
+add_cap <- function(dataset, var_qt, cap_value, cap_color) {
   
+  # Defaults
+  lab_subtitle_cap <- ""
   cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
                       color = "none")
-  
-  lab_subtitle_cap <- ""
   
   # If manually applying a max filter value
   if (is.na(cap_value) == FALSE) {
@@ -1009,16 +1008,20 @@ add_cap <- function(dataset, var_qt, cap_color, cap_value) {
     # Getting number of rows at or above the cap
     nrow_hi <- dataset %>% 
       filter_at(vars({{var_qt}}), ~.>= cap_value) %>% 
-      # filter({{variable_of_interest}} >= cap_value) %>% 
       nrow()
     
-    if (nrow_hi == nrow_ds) {
+    if (nrow_hi == 0) {
+      print(paste0(
+        "No values of ", {{var_qt}}, " are greater than or equal to ",
+        {{cap_value}}, "; color cap not applied."
+      ))
+    } else if (nrow_hi == nrow_ds) {
       print(paste0(
         "All values of ", {{var_qt}}," are greater than or equal to ",
         {{cap_value}}, "; color cap not applied."
       ))
     } else if ((nrow_hi > 0) == TRUE) {
-      # Replacing the values above the set max to be NA so that they will be colored differently on the map
+      # Replacing the values above the set max to be NA so that they will be colored differently
       dataset <- dataset %>% 
         mutate_at(vars({{var_qt}}), ~replace(., which(.>={{cap_value}}), NA))
       
@@ -1041,13 +1044,7 @@ add_cap <- function(dataset, var_qt, cap_color, cap_value) {
                             title.theme = element_text(size = 10),
                             override.aes = list(color = cap_color, fill = cap_color)
                           ))
-    } else {
-      print(paste0(
-        "No values greater than or equal to ",
-        {{cap_value}}, " found in ", {{var_qt}},
-        "; color cap will not be applied."
-      ))
-    }
+    } else { print("Error.") }
   }
   
   return(list(
@@ -1063,10 +1060,10 @@ add_cap <- function(dataset, var_qt, cap_color, cap_value) {
 # Required inputs: atmospheric (df), value (column of PM2.5 data w/in df to map), location_data (lat/long data to be joined to df; default: data_meta)
 # Optional inputs: grouping variables (1 or 2) & map customization: type, zoom, overlay tint alpha & color, point size
 
-map_q <- function(dataset, variable_of_interest, location_data = data_meta,
-                        grouping_vars = NULL,
-                        cap_value = NA, cap_color = "red",
-                        point_size = 3, maptype = "toner-lite", zoom = 11, tint_alpha = 0.5, tint_color = "black"){
+map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_data = data_meta,
+                  cap_value = NA, cap_color = "red",
+                  start_date = input_startdate, end_date = input_enddate,
+                  point_size = 3, maptype = "toner-lite", zoom = 11, tint_alpha = 0.5, tint_color = "black"){
   
   # Warning message and halting execution if required input is missing.
   if (missing(variable_of_interest) == TRUE) {
@@ -1079,6 +1076,11 @@ map_q <- function(dataset, variable_of_interest, location_data = data_meta,
   }
 
   variable_of_interest_qt <- deparse(substitute(variable_of_interest))
+  
+  scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  
+  lab_title_sub <- scale_results$lab_title_sub
+  lab_subtitle <- scale_results$lab_caption
   
   # Wrangling based on provided inputs
   dataset <- dataset %>% 
@@ -1116,7 +1118,7 @@ map_q <- function(dataset, variable_of_interest, location_data = data_meta,
   
   lab_title <- unit_results$lab_title
   lab_title_val <- unit_results$lab_title_val
-  lab_subtitle <- unit_results$lab_subtitle
+  lab_subtitle <- paste(lab_subtitle, unit_results$lab_subtitle, sep = "\n")
   lab_fill <- unit_results$lab_fill
   fill_colors <- unit_results$fill_colors
   
@@ -1151,7 +1153,7 @@ map_q <- function(dataset, variable_of_interest, location_data = data_meta,
       # fill = lab_pm,
       fill = lab_fill,
       shape = "Monitor location:",
-      caption = "Data not grouped."
+      caption = paste0("Data ", lab_title_sub, "; displayed as collective average by location")
     ) +
     cap_guide +
     scale_color_manual(values = "transparent")
@@ -1169,7 +1171,9 @@ map_q <- function(dataset, variable_of_interest, location_data = data_meta,
         ))) +
       labs(
         caption = paste(
-          "Data grouped by",
+          "Data",
+          lab_title_sub,
+          "then grouped by",
           grouping_vars[1],
           "and",
           grouping_vars[2]
@@ -1186,7 +1190,9 @@ map_q <- function(dataset, variable_of_interest, location_data = data_meta,
       facet_wrap(grouping_vars) +
       labs(
         caption = paste(
-          "Data grouped by",
+          "Data",
+          lab_title_sub,
+          "then grouped by",
           (colnames(dataset %>% select(grouping_vars)))[1]
         )
       )
@@ -1203,12 +1209,15 @@ map_q <- function(dataset, variable_of_interest, location_data = data_meta,
 
 ```{r test_map, eval=FALSE}
 map_q(data_daily, variable_of_interest = pm25_atm, grouping_vars = "date_tag", cap_value = 14)
+map_q(data_daily, variable_of_interest = pm25_atm, cap_value = 11)
+map_q(data_hourly, pm25_atm, cap_value = 17, cap_color = "black", grouping_vars = c("hour_tag", "date_tag"))
 ```
 
 ```{r viz_function_single_heatmap}
 heatmap_single <- function(dataset = data_hourly, variable_of_interest, site_of_interest,
+                           cap_value = NA, cap_color = "red",
                            data_labels = TRUE, digits = 2, date_breaks = "1 day",
-                           location_data = data_meta){
+                           text_color = "black", location_data = data_meta){
   
   if ("date_hour" %in% colnames(dataset) == FALSE) { stop("ERROR: Inputted data set is not hourly by day") }
   
@@ -1227,7 +1236,7 @@ heatmap_single <- function(dataset = data_hourly, variable_of_interest, site_of_
   temp_loc <- location_data %>% 
     select(site_id, label)
   
-  temp_df <- dataset %>% 
+  dataset <- dataset %>% 
     ungroup() %>% 
     # Adding labels to the data set
     left_join(temp_loc) %>% 
@@ -1238,45 +1247,70 @@ heatmap_single <- function(dataset = data_hourly, variable_of_interest, site_of_
     # Removing duplicate rows
     distinct()
   
+  dataset_vals <- dataset %>%
+    select("date_hour", "vals" = variable_of_interest_qt)
+  
   # Verification that only one monitor is selected. Execution will halt if 0 or >1 are detected
-  if (length(unique(temp_df$label)) == 0) {
+  if (length(unique(dataset$label)) == 0) {
     stop("ERROR: No monitors selected. Please verify that a distinct label was provided. Capitalization matters.")
   }
-  if (length(unique(temp_df$label)) > 1) {
+  if (length(unique(dataset$label)) > 1) {
     print("Matching locations from meta data:")
     temp_loc %>% filter(str_detect(label, site_of_interest)) %>% distinct() %>% pull(label) %>% print()
     print("Matching locations that contain values of interest:")
-    temp_df %>% pull(label) %>% unique() %>% print()
+    dataset %>% pull(label) %>% unique() %>% print()
     stop("ERROR: More than one site selected. Please use a more precise string argument; matching values are listed above.")
   }
   
-  unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt, cap_color = NA,
-                                 lab_title = "Heatmap of")
+  unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt,
+                                 cap_color = cap_color, lab_title = "Heatmap of")
   
   lab_title <- unit_results$lab_title
   lab_title_val <- unit_results$lab_title_val
-  lab_subtitle <- paste0("Monitor selected: \"", temp_df %>% pull(label),
-                         "\" (ID: ", temp_df %>% pull(site_id),").\n",
+  lab_subtitle <- paste0("Monitor selected: \"", dataset %>% pull(label),
+                         "\" (ID: ", dataset %>% pull(site_id),").\n",
                         unit_results$lab_subtitle)
   lab_fill <- unit_results$lab_fill
   fill_colors <- unit_results$fill_colors
   
+  
+  cap_results <- add_cap(dataset = dataset, var_qt = variable_of_interest_qt,
+                         cap_value = cap_value, cap_color = cap_color)
+  
+  dataset <- cap_results$dataset
+  lab_subtitle <- paste(lab_subtitle, cap_results$lab_subtitle_cap, sep="\n")
+  cap_guide <- cap_results$cap_guide
+  
+  
   scale_results <- settings_dt_scale(dataset = dataset, start_date = NA, end_date = NA)
   
-  dataset <- scale_results$dataset
+  dataset <- scale_results$dataset %>% rename(date_hour = timestamp)
   lab_title_sub <- scale_results$lab_title_sub
   lab_caption <- scale_results$lab_caption
   
+  
   if (data_labels == TRUE) {
-    data_labels <- geom_text()
+    data_labels <- geom_text(
+      inherit.aes = FALSE,
+      data = dataset_vals,
+      aes(
+        x = date(date_hour),
+        y = hour(date_hour),
+        label = rounding_w_zeroes(vals, digits)
+      ),
+      color = {{text_color}}
+    )
+    # data_labels <- geom_text(color = {{text_color}})
   } else { data_labels <- NULL }
   
   # Plotting data
-  temp_df %>% 
-    ggplot(aes(x = date(date_hour),
-               y = hour(date_hour),
-               fill = {{variable_of_interest}},
-               label = rounding_w_zeroes({{variable_of_interest}}, digits)
+  dataset %>% 
+    ggplot(aes(
+      x = date(date_hour),
+      y = hour(date_hour),
+      fill = {{variable_of_interest}},
+      color = ""
+      # label = rounding_w_zeroes({{variable_of_interest}}, digits)
     )) +
     geom_tile() +
     fill_colors +
@@ -1304,14 +1338,17 @@ heatmap_single <- function(dataset = data_hourly, variable_of_interest, site_of_
       caption = lab_caption,
       y = "Hour of the day"
     ) + 
-    guides(fill = guide_colorbar(barwidth = 10))
+    scale_color_manual(values = "transparent") +
+    cap_guide
 }
 ```
 
 ```{r test_heatmap_single, eval=FALSE}
 # heatmap_single(data_hourly, "Indigo", epa_2021)
 # heatmap_single(data_hourly, "Indigo", humidity)
+heatmap_single(data_hourly, epa_2021, "Sunset", cap_value = 15)
 heatmap_single(data_hourly, epa_2021, "Sunset")
+heatmap_single(variable_of_interest = pm25_atm, site_of_interest = "Lighthouse", cap_value = 20, cap_color = "green", data_label = F)
 ```
 
 ```{r viz_function_heatmap}
@@ -1429,6 +1466,7 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
 heatmap_cross(data_hourly, pm25_atm)
 heatmap_cross(data_daily, temperature)
 heatmap_cross(data_diurnal, pm25_atm, cap_value = 10, cap_color = "green")
+heatmap_cross(data_pm25, pm25_atm, cap_value = 50, cap_color = "green")
 ```
 
 ```{r viz_function_ts}
