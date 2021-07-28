@@ -32,10 +32,10 @@ library(ggrepel)
 ```{r inputs}
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
 # Data will be pulled from the start of the start date through the end of the end date
-# input_startdate <- "2021-07-01"
-# input_enddate <- "2021-07-08"
-input_startdate <- "2021-07-10"
-input_enddate <- "2021-07-13"
+input_startdate <- "2021-07-01"
+input_enddate <- "2021-07-08"
+# input_startdate <- "2021-07-10"
+# input_enddate <- "2021-07-13"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE.
 # Grab data for outdoor sensors?
@@ -62,13 +62,13 @@ input_north <- 45.6
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Example format below. Capitalization matters!
 # \\b is added where we want only values that report those words on their own (ex. STAR-LAB and not STARSYSTEM1)
-# input_labels <- c("se", "SE", "Se", "\\bSTAR\\b", "\\bPSU\\b")
-input_labels <- c("Indigo")
+input_labels <- c("se", "SE", "Se", "\\bSTAR\\b", "\\bPSU\\b")
+# input_labels <- c("Indigo")
 
 # Optional grouping settings
 ## DATE GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
 # Run date grouping? If set to "FALSE", the date inputs below will not matter (but will still appear in the environment)
-run_date_grouping <- FALSE
+run_date_grouping <- TRUE
 # Date grouping categories:
 input_date_tags <- c("Before", "Independence Day", "After")
 # Start dates (in a list, "YYYY-MM-DD")
@@ -89,6 +89,8 @@ input_hour_starts <- c(5, 12, 17, 21)
 
 
 ```{r getting_pas}
+setArchiveBaseUrl("http://data.mazamascience.com/PurpleAir/v1")
+
 get_area_pas <- function(state_code = input_stateCode,
                          west = input_west, east = input_east, south = input_south, north = input_north,
                          labels = input_labels,
@@ -743,102 +745,399 @@ remove(apply_corrections, apply_functions, apply_epa, apply_lrapa, apply_hour_ta
 remove(list = c(ls(pattern = "input_(hour|date)_")))
 ```
 
+```{r function_dt_scale}
+settings_dt_scale <- function(dataset, start_date, end_date) {
+  # Expanding axis to allow monitor labels to be closer to the data
+  options_expand <- expansion(mult = c(0.01, 0.01))
+  x_angle <- 30
+  lab_title_sub <- "across time"
+  
+  # Setting axis breaks based on the minimum time unit in the data set
+  if ("datetime" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- paste0(lab_title_sub, ", unaveraged")
+    dataset <- dataset %>% rename(timestamp = datetime)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("date_hour" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- paste0(lab_title_sub, ", averaged hourly by day")
+    dataset <- dataset %>% rename(timestamp = date_hour)
+    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("date" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- paste0(lab_title_sub, ", averaged by day")
+    dataset <- dataset %>% rename(timestamp = date)
+    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
+    print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
+    date_in_set <- TRUE
+  } else if ("hour" %in% colnames(dataset) == TRUE) {
+    lab_title_sub <- paste0(lab_title_sub, ", averaged by hour of day")
+    dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
+    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
+    x_angle <- 45
+    print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
+    print("Dates in the caption will default to the inputted start and end dates")
+    date_in_set <- FALSE
+  } else { stop("INPUT ERROR: No time-based variables found!") }
+  
+  if (date_in_set == TRUE) {
+    start_date <- min(date(dataset$timestamp))
+    end_date <- max(date(dataset$timestamp))
+  } else {
+    start_date <- as.Date(start_date)
+    end_date <- as.Date(end_date)
+  }
+  # Formatting dates
+  start_date <- format(start_date, "%d %b %Y")
+  end_date <- format(end_date, "%d %b %Y")
+  
+  lab_caption <- paste0("Data from ", start_date, " to ", end_date, ".")
+  
+  return(list(
+    dataset = dataset,
+    lab_title_sub = lab_title_sub,
+    x_angle = x_angle,
+    x_scale = x_scale,
+    date_in_set = date_in_set,
+    start_date = start_date,
+    end_date = end_date,
+    lab_caption = lab_caption
+  ))
+}
+```
+
+```{r function_units}
+settings_units <- function(dataset = dataset, var_qt = variable_of_interest_qt,
+                           cap_value = NA, cap_color = "red", digits = 2,
+                           lab_title = "Graph of", lab_fill = "Units", lab_unit = "units") {
+  
+  # Defaults
+  lab_title_val <- var_qt
+  # Color scale will default set to start at 0
+  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = cap_color)
+  
+  if (str_detect(var_qt, "pm") == TRUE) {
+    lab_title_val <- "Particulate Matter (PM)"
+    lab_unit <- '*mu*"g/m"^3*'
+    
+    if (str_detect(var_qt, "(1.0)|(01)|(1$)|(1\\D)") == TRUE) {
+      pm_val <- 1.0
+      print("PM 1.0 detected")
+    } else if (str_detect(var_qt, "(25)|(2.5)") == TRUE) {
+      pm_val <- 2.5
+      print("PM 2.5 detected")
+    } else if (str_detect(var_qt, "(10)") == TRUE) {
+      pm_val <- 10
+      print("PM 10 detected")
+    } else {
+      pm_val <- NULL
+      print("PM unit undetermined")
+    }
+    lab_fill <- parse(text = paste0('PM[', pm_val, ']~"("', lab_unit,'")"'))
+    lab_unit <- "units"
+  }
+  
+  # Adjusting color scale and labels if the variable of interest is internal temperature
+  if (str_detect(var_qt, "temp") == TRUE) {
+    lab_title_val <- "internal temperature"
+    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15, na.value = cap_color)
+    print("Temperature detected as variable of interest; adjusting labels accordingly")
+    lab_unit <- "\u00B0F"
+    
+    if (str_detect(var_qt, "_c") == TRUE) {
+      lab_unit <- "\u00B0C"
+      print("Temperature detected to be in Celsius")
+    } else { print("Temperature assumed to be in Fahrenheit") }
+    
+    lab_fill <- paste0("Internal temperature (", lab_unit, ")")
+  }
+  
+  # Adjusting color scale and labels if the variable of interest is RH
+  if (str_detect(var_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
+    lab_title_val <- "humidity"
+    lab_unit <- "%"
+    lab_fill <- paste0("Relative humidity (", lab_unit, ")")
+    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9, na.value = cap_color)
+    print("RH detected as variable of interest; adjusting labels accordingly")
+  }
+  
+  # Getting min and max values from the data set
+  val_min <- dataset %>% ungroup() %>% select_at(vars(var_qt)) %>% min(na.rm = TRUE)
+  val_max <- dataset %>% ungroup() %>% select_at(vars(var_qt)) %>% max(na.rm = TRUE)
+  
+  lab_subtitle <- paste0("Variable plotted: ",
+                         var_qt,
+                         ", with a reported range of ",
+                         round(val_min, digits = digits),
+                         " to ",
+                         round(val_max, digits = digits),
+                         " ", lab_unit, ".")
+  
+  cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                      color = "none")
+  
+  # If manually applying a max filter value
+  if (is.na(cap_value) == FALSE) {
+    # Getting number of rows at or above the cap
+    nrow_hi <- dataset %>% 
+      filter_at(vars({{var_qt}}),  ~.>= cap_value) %>% 
+      nrow()
+    
+    if ((nrow_hi > 0) == TRUE) {
+      # Replacing the values above the set max to be NA so that they will be colored differently on the map
+      dataset <- dataset %>% 
+        mutate_at(vars({{var_qt}}), ~replace(., which(.>={{cap_value}}), NA))
+      
+      # Updated lab caption to include the filter
+      lab_subtitle <- paste0("Color scale manually capped at ",
+                             cap_value, " units; all higher values colored ", cap_color,
+                             ".\n", lab_subtitle)
+      
+      # Feedback
+      print(paste(
+        "Values greater than or equal to",
+        {{cap_value}}, "in", {{var_qt}},
+        "will be colored", cap_color
+      ))
+      
+      cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                          color = guide_legend(
+                            title = paste0(cap_value, "+"),
+                            order = 2,
+                            title.position = "bottom",
+                            title.theme = element_text(size = 10),
+                            override.aes = list(color = cap_color, fill = cap_color)
+                          ))
+    } else {
+      print(paste0(
+        "No values greater than or equal to ",
+        {{cap_value}}, " found in ", {{var_qt}},
+        "; color cap will not be applied."
+      ))
+    }
+  }
+  
+  return(list(
+    lab_title = lab_title,
+    lab_title_val = lab_title_val,
+    lab_subtitle = lab_subtitle,
+    lab_fill = lab_fill,
+    fill_colors = fill_colors,
+    cap_guide = cap_guide
+  ))
+}
+```
+
+```{r function_filtering}
+filter_df <- function(dataframe, var = label, include = c(""), exclude = c(""), location_data = data_meta) {
+  
+  to_include <- paste0("(", paste(include, collapse = ")|("), ")")
+  to_exclude <- paste0("(", paste(exclude, collapse = ")|("), ")")
+  
+  df <- dataframe %>% left_join(data_meta)
+  
+  df <- df %>% 
+    filter(str_detect({{var}}, to_include))
+  
+  if (to_exclude != "()"){
+    df <- df %>% 
+      filter(!str_detect({{var}}, to_exclude))
+  }
+  
+  df %>% 
+    select(all_of(names(dataframe)))
+}
+```
+
+```{r,eval=FALSE}
+drop_incomplete <- function(dataset) {
+  # Number of values expected for a complete set
+  complete_num <- (dataset %>% 
+                     ungroup() %>% 
+                     count(site_id) %>% 
+                     arrange(desc(n)) %>% 
+                     pull(n))[1]
+  
+  # List of monitors with incomplete sets
+  to_drop <- dataset %>% 
+    ungroup() %>% 
+    count(site_id) %>% 
+    filter(n != complete_num) %>% 
+    pull(site_id)
+  
+  if (to_drop == character(0))
+  
+  # Feedback
+  print("Monitors with incomplete temporal data that will be dropped:")
+  print(paste(to_drop))
+  
+  # Removing incomplete monitors
+  dataset <- dataset %>% 
+    filter(!site_id %in% to_drop)
+  
+  return(dataset)
+}
+```
+
+```{r function_rounding}
+rounding_w_zeroes <- function(num, input_digits) {
+  input_digits <- {{input_digits}}
+  
+  as.character(
+    sprintf(
+      paste0("%.", deparse(substitute(input_digits)), "f"),
+      round(num, digits = input_digits)
+    )
+  )
+}
+```
+
+```{r function_cap}
+add_cap <- function(dataset, var_qt, cap_color, cap_value) {
+  
+  cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                      color = "none")
+  
+  lab_subtitle_cap <- ""
+  
+  # If manually applying a max filter value
+  if (is.na(cap_value) == FALSE) {
+    
+    nrow_ds <- nrow(dataset)
+    
+    # Getting number of rows at or above the cap
+    nrow_hi <- dataset %>% 
+      filter_at(vars({{var_qt}}), ~.>= cap_value) %>% 
+      # filter({{variable_of_interest}} >= cap_value) %>% 
+      nrow()
+    
+    if (nrow_hi == nrow_ds) {
+      print(paste0(
+        "All values of ", {{var_qt}}," are greater than or equal to ",
+        {{cap_value}}, "; color cap not applied."
+      ))
+    } else if ((nrow_hi > 0) == TRUE) {
+      # Replacing the values above the set max to be NA so that they will be colored differently on the map
+      dataset <- dataset %>% 
+        mutate_at(vars({{var_qt}}), ~replace(., which(.>={{cap_value}}), NA))
+      
+      # Updated lab caption to include the filter
+      lab_subtitle_cap <- paste0("Color scale manually capped at ",
+                             cap_value, " units; all higher values colored ", cap_color)
+      
+      # Feedback
+      print(paste(
+        "Values greater than or equal to",
+        {{cap_value}}, "in", {{var_qt}},
+        "will be colored", cap_color
+      ))
+      
+      cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                          color = guide_legend(
+                            title = paste0(cap_value, "+"),
+                            order = 2,
+                            title.position = "bottom",
+                            title.theme = element_text(size = 10),
+                            override.aes = list(color = cap_color, fill = cap_color)
+                          ))
+    } else {
+      print(paste0(
+        "No values greater than or equal to ",
+        {{cap_value}}, " found in ", {{var_qt}},
+        "; color cap will not be applied."
+      ))
+    }
+  }
+  
+  return(list(
+    dataset = dataset,
+    lab_subtitle_cap = lab_subtitle_cap,
+    cap_guide = cap_guide
+  ))
+}
+```
+
 ```{r viz_function_map}
 # FUNCTION
-# Required inputs: pm_data (df), value (column of PM2.5 data w/in df to map), location_data (lat/long data to be joined to df; default: data_meta)
-# Optional inputs: grouping variables (1 or 2) w/ respective custom exclusions; filter for indoor/outdoor data
-# Other customization for map: type (stamen), zoom, tint & color, point size, color scale (virids)
+# Required inputs: atmospheric (df), value (column of PM2.5 data w/in df to map), location_data (lat/long data to be joined to df; default: data_meta)
+# Optional inputs: grouping variables (1 or 2) & map customization: type, zoom, overlay tint alpha & color, point size
 
-map_q <- function(pm_data, value, location_data = data_meta,
-                  grouping_var = NULL, exclude = NULL,
-                  grouping_var_2 = NULL, exclude_2 = NULL,
-                  outside = include_outside, inside = include_inside,
-                  label = c(""),
-                  maptype = "toner-lite", zoom = 11, tint = 0.5, tint_color = "black",
-                  point_size = 3, viridis = "viridis"){
+map_q <- function(dataset, variable_of_interest, location_data = data_meta,
+                        grouping_vars = NULL,
+                        cap_value = NA, cap_color = "red",
+                        point_size = 3, maptype = "toner-lite", zoom = 11, tint_alpha = 0.5, tint_color = "black"){
   
   # Warning message and halting execution if required input is missing.
-  if (missing(value) == TRUE) {
-    stop ("ERROR in argument 'value': Missing input, with no default. Execution haulted. Please input a valid PM2.5 variable (e.g. epa_2021).")
+  if (missing(variable_of_interest) == TRUE) {
+    stop ("ERROR in argument 'variable_of_interest': Missing input, with no default. Execution haulted. Please input a valid PM2.5 variable (e.g. pm25_atm).")
   }
   
   # Warning message and halting execution if inputeded data does not have more than one unique site_id (map will bug)
-  if (length(unique(pm_data$site_id)) == 1) {
+  if (length(unique(dataset$site_id)) == 1) {
     stop("ERROR: Insufficient data to create a map. Provide a data set with more than one site.")
   }
-  
-  input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
+
+  variable_of_interest_qt <- deparse(substitute(variable_of_interest))
   
   # Wrangling based on provided inputs
-  data_temp <- pm_data %>% 
+  dataset <- dataset %>% 
     ungroup() %>% 
     # Grouping by provided variables, as well as site_id
-    group_by_at(vars(site_id, {{grouping_var}}, {{grouping_var_2}})) %>% 
+    group_by_at(vars(site_id, {{grouping_vars}})) %>% 
     # Calculating means by said grouping variables
-    summarize(mean = mean({{value}}, na.rm = TRUE)) %>% 
+    summarize(mean = mean({{variable_of_interest}}, na.rm = TRUE)) %>% 
     drop_na(mean) %>% 
     # Adding location data to get lat & lon
-    left_join(location_data) %>% 
-    # Selecting desired labels, if provided
-    filter(str_detect(label, input_labels))
+    left_join(location_data)
+  
+  # Renaming newly-created "mean" variable
+  names(dataset)[names(dataset) == 'mean'] <- variable_of_interest_qt
   
   # Feedback message
   print("Data now grouped and averaged. Location data added.")
   
-  # Custom filtering: exclusions for input categories
-  if (is.null(exclude) == FALSE) {
-    to_exclude <- paste(exclude, collapse = "|")
-    data_temp <- data_temp %>% 
-      filter(!str_detect({{grouping_var}}, to_exclude))
-    print(paste("Excluded", exclude, "from", deparse(substitute(grouping_var))))
-  }
-  if (is.null(exclude_2) == FALSE) {
-    to_exclude_2 <- paste(exclude_2, collapse = "|")
-    data_temp <- data_temp %>% 
-      filter(!str_detect({{grouping_var_2}}, to_exclude_2))
-    print(paste("Excluded", exclude_2, "from", deparse(substitute(grouping_var_2))))
-  }
+  # Creating a list of unique monitor locations
+  unique_locs <- unique(dataset$DEVICE_LOCATIONTYPE)
   
-  # Default shapes for inside/outside
-  shapes_inout <- c("outside" = 21, "inside" = 23)
-  
-  # Custom filtering: exclusions for inside/outside
-  # Will also override shape arguments to prevent excluded category from showing in the legend
-  if (outside == FALSE) {
-    data_temp <- data_temp %>% 
-      filter(DEVICE_LOCATIONTYPE != "outside")
-    print("Outdoor data excluded")
-    shapes_inout <- c("inside" = 23)
-  }
-  if (inside == FALSE) {
-    data_temp <- data_temp %>% 
-      filter(DEVICE_LOCATIONTYPE != "inside")
-    print("Indoor data excluded")
+  if (any(unique_locs == "outside") & any(unique_locs == "inside")) {
+    shapes_inout <- c("outside" = 21, "inside" = 23)
+    print("Indoor and outdoor monitors detected in data set")
+  } else if (any(unique_locs == "outside")) {
     shapes_inout <- c("outside" = 21)
+    print("Only outdoor monitors detected in data set")
+  } else if (any(unique_locs == "inside")) {
+    shapes_inout <- c("inside" = 23)
+    print("Only indoor monitors detected in data set")
   }
   
+  unit_results <- settings_units(dataset = dataset, var_qt = variable_of_interest_qt,
+                                cap_color = cap_color, lab_title = "Map of")
   
-  # Labels for the plot
-  lab_title <- expression("PM"[2.5]*" values")
-  lab_subtitle <- paste("Data from PurpleAir. Data plotted:", deparse(substitute(value)))
-  lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  lab_title <- unit_results$lab_title
+  lab_title_val <- unit_results$lab_title_val
+  lab_subtitle <- unit_results$lab_subtitle
+  lab_fill <- unit_results$lab_fill
+  fill_colors <- unit_results$fill_colors
+  
+  cap_results <- add_cap(dataset = dataset, var_qt = variable_of_interest_qt,
+                         cap_value = cap_value, cap_color = cap_color)
+  
+  dataset <- cap_results$dataset
+  lab_subtitle <- paste(lab_subtitle, cap_results$lab_subtitle_cap, sep="\n")
+  cap_guide <- cap_results$cap_guide
   
   # Base plot
-  plot <- qmplot(data = data_temp, x = longitude, y = latitude,
-         geom = "blank", maptype = maptype, zoom = zoom, darken = c(tint, tint_color)) +
-    facet_wrap(vars({{grouping_var}})) +
+  plot <- qmplot(data = dataset, x = longitude, y = latitude,
+                 geom = "blank", maptype = maptype, zoom = zoom, darken = c(tint_alpha, tint_color)) +
+    # facet_wrap(vars({{grouping_var}})) +
     geom_point(
-      aes(fill = mean, shape = DEVICE_LOCATIONTYPE),
-      color = "white",
+      aes(fill = {{variable_of_interest}}, shape = DEVICE_LOCATIONTYPE, color = ""),
+      # color = "white",
       alpha = 0.8,
       size = point_size
     ) +
-    scale_fill_viridis(
-      option = {{viridis}},
-      direction = -1,
-      end = 0.85,
-      limits = c(0, NA)
-    ) +
+    fill_colors +
     theme_void() +
     scale_shape_manual(values = shapes_inout) +
     theme(
@@ -847,53 +1146,52 @@ map_q <- function(pm_data, value, location_data = data_meta,
     ) + 
     guides(shape = guide_legend(override.aes = list(fill="black"))) +
     labs(
-      title = lab_title,
+      title = paste(lab_title, lab_title_val),
       subtitle = lab_subtitle,
-      fill = lab_pm,
+      # fill = lab_pm,
+      fill = lab_fill,
       shape = "Monitor location:",
       caption = "Data not grouped."
-    )
+    ) +
+    cap_guide +
+    scale_color_manual(values = "transparent")
   
   # Feedback message
   print("Base plot created.")
   
-  ## Faceting by grouping variable(s) and applying an appropriate caption to reflect the grouping
-  # Facet wrap if 1 grouping variable provided
-  if (deparse(substitute(grouping_var)) != "NULL" & deparse(substitute(grouping_var_2)) == "NULL") {
+  if (length(grouping_vars) == 2) {
     plot <- plot +
-      facet_wrap(vars({{grouping_var}})) +
+      facet_grid(
+        formula(paste(
+          grouping_vars[1],
+          "~",
+          grouping_vars[2]
+        ))) +
       labs(
         caption = paste(
           "Data grouped by",
-          (colnames(pm_data %>% select({{grouping_var}})))[1]
+          grouping_vars[1],
+          "and",
+          grouping_vars[2]
         )
       )
     # Feedback message
-    print(paste("Plot now faceted by", deparse(substitute(grouping_var))))
-  }
-  # Facet grid if 2 grouping variables provided
-  if (deparse(substitute(grouping_var)) != "NULL" & deparse(substitute(grouping_var_2)) != "NULL") {
+    print(paste("Plot now faceted by",
+                grouping_vars[1],
+                "and",
+                grouping_vars[2]
+    ))
+  } else if (length(grouping_vars) == 1) {
     plot <- plot +
-      facet_grid(
-      formula(paste(
-        vars({{grouping_var_2}}),
-        "~",
-        vars({{grouping_var}})
-      ))) +
+      facet_wrap(grouping_vars) +
       labs(
         caption = paste(
           "Data grouped by",
-          deparse(substitute(grouping_var)),
-          "and",
-          deparse(substitute(grouping_var_2))
-          )
+          (colnames(dataset %>% select(grouping_vars)))[1]
+        )
       )
     # Feedback message
-    print(paste("Plot now faceted by",
-                deparse(substitute(grouping_var)),
-                "and",
-                deparse(substitute(grouping_var_2))
-                ))
+    print(paste("Plot now faceted by", grouping_vars))
   }
   
   print("Final plot created.")
@@ -904,19 +1202,7 @@ map_q <- function(pm_data, value, location_data = data_meta,
 ```
 
 ```{r test_map, eval=FALSE}
-map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
-
-data_hourly %>% 
-  column_dt("hour") %>% 
-  mutate(hour = as.factor(hour)) %>% 
-  map_q(value = epa_2021, grouping_var = hour, grouping_var_2 = date_tag, inside=FALSE)
-
-map_q(data_daily, value = epa_2020, grouping_var = date_tag, inside = FALSE)
-
-map_q(data_daily, value = lrapa, grouping_var = date_tag, exclude = "Fire")
-
-map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
-      maptype = "terrain", tint = 0.3, tint_color = "white", viridis = "magma")
+map_q(data_daily, variable_of_interest = pm25_atm, grouping_vars = "date_tag", cap_value = 14)
 ```
 
 ```{r viz_function_single_heatmap}
@@ -1087,50 +1373,12 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   lab_fill <- unit_results$lab_fill
   fill_colors <- unit_results$fill_colors
   
-  cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
-                      color = "none")
+  cap_results <- add_cap(dataset = dataset, var_qt = variable_of_interest_qt,
+                         cap_value = cap_value, cap_color = cap_color)
   
-  # If manually applying a max filter value
-  if (is.na(cap_value) == FALSE) {
-    # Getting number of rows at or above the cap
-    nrow_hi <- dataset %>% 
-      filter({{variable_of_interest}} >= cap_value) %>% 
-      nrow()
-    
-    if ((nrow_hi > 0) == TRUE) {
-      # Replacing the values above the set max to be NA so that they will be colored differently on the map
-      dataset <- dataset %>% 
-        mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>={{cap_value}}), NA))
-      
-      # Updated lab caption to include the filter
-      lab_subtitle <- paste0("Color scale manually capped at ",
-                             cap_value, " units; all higher values colored ", cap_color,
-                             ".\n", lab_subtitle)
-      
-      # Feedback
-      print(paste("Values greater than or equal to",
-                  {{cap_value}},
-                  "in",
-                  variable_of_interest_qt,
-                  "will be colored",
-                  cap_color))
-      
-      cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
-                          color = guide_legend(
-                            title = paste0(cap_value, "+"),
-                            order = 2,
-                            title.position = "bottom",
-                            title.theme = element_text(size = 10),
-                            override.aes = list(color = cap_color, fill = cap_color)
-                          ))
-    } else {
-      print(paste0("No values greater than or equal to ",
-                   {{cap_value}},
-                   " found in ",
-                   variable_of_interest_qt,
-                   "; color cap will not be applied."))
-    }
-  }
+  dataset <- cap_results$dataset
+  lab_subtitle <- paste(lab_subtitle, cap_results$lab_subtitle_cap, sep="\n")
+  cap_guide <- cap_results$cap_guide
   
   scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
   
@@ -1178,11 +1426,9 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
 ```
 
 ```{r test_heatmap, eval=FALSE}
-#heatmap_cross(data_pm25, variable_of_interest=pm25_atm, cap_value = 50, drop_incomplete = TRUE)
-# heatmap_cross(data_pm25, pm25_atm, cap_value = 50, cap_color = green)
 heatmap_cross(data_hourly, pm25_atm)
 heatmap_cross(data_daily, temperature)
-heatmap_cross(data_diurnal, pm25_atm, cap_value = 15)
+heatmap_cross(data_diurnal, pm25_atm, cap_value = 10, cap_color = "green")
 ```
 
 ```{r viz_function_ts}
@@ -1250,7 +1496,7 @@ ts_line <- function(dataset, variable_of_interest,
     ) %>% 
     distinct() %>% 
     group_by(site_id, date) %>% 
-    mutate_at(vars(max, min), funs(replace(., duplicated(.), NA))) %>% 
+    mutate_at(vars(max, min), ~replace(., duplicated(.), NA)) %>% 
     select(!date)
   
   label_order <- location_data %>% 
@@ -1379,217 +1625,7 @@ ts_line <- function(dataset, variable_of_interest,
 
 ```{r test_ts, eval=FALSE}
 ts_line(data_hourly, pm25_atm)
+ts_line(data_hourly, temperature, add_points = TRUE)
 ts_line(data_hourly, pm25_atm, add_points = TRUE)
 ts_line(data_hourly, pm25_atm, label = c("\\bSTAR\\b"), single_column = TRUE)
 ```
-
-
-```{r function_dt_scale}
-settings_dt_scale <- function(dataset, start_date, end_date) {
-  # Expanding axis to allow monitor labels to be closer to the data
-  options_expand <- expansion(mult = c(0.01, 0.01))
-  x_angle <- 30
-  lab_title_sub <- "across time"
-  
-  # Setting axis breaks based on the minimum time unit in the data set
-  if ("datetime" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- paste0(lab_title_sub, ", unaveraged")
-    dataset <- dataset %>% rename(timestamp = datetime)
-    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Raw set detected: x-axis will map across in units of apx. 2 minutes, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("date_hour" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- paste0(lab_title_sub, ", averaged hourly by day")
-    dataset <- dataset %>% rename(timestamp = date_hour)
-    x_scale <- scale_x_datetime(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Hourly set detected: x-axis will map across in units of hour in each day, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("date" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- paste0(lab_title_sub, ", averaged by day")
-    dataset <- dataset %>% rename(timestamp = date)
-    x_scale <- scale_x_date(breaks = "1 day", date_labels = "%d %b", expand = options_expand)
-    print("Daily set detected: x-axis will map across in units of 24 hours, with axis breaks each day")
-    date_in_set <- TRUE
-  } else if ("hour" %in% colnames(dataset) == TRUE) {
-    lab_title_sub <- paste0(lab_title_sub, ", averaged by hour of day")
-    dataset <- dataset %>% mutate(time = hms::as_hms(hour), timestamp = as_datetime(time))
-    x_scale <- scale_x_datetime(breaks = "1 hour", date_labels = "%H:%M", expand = options_expand)
-    x_angle <- 45
-    print("Diurnal set detected: Data will map across by hour of day, with axis breaks each hour")
-    print("Dates in the caption will default to the inputted start and end dates")
-    date_in_set <- FALSE
-  } else { stop("INPUT ERROR: No time-based variables found!") }
-  
-  if (date_in_set == TRUE) {
-    start_date <- min(date(dataset$timestamp))
-    end_date <- max(date(dataset$timestamp))
-  } else {
-    start_date <- as.Date(start_date)
-    end_date <- as.Date(end_date)
-  }
-  # Formatting dates
-  start_date <- format(start_date, "%d %b %Y")
-  end_date <- format(end_date, "%d %b %Y")
-  
-  lab_caption <- paste0("Data from ", start_date, " to ", end_date, ".")
-  
-  return(list(
-    dataset = dataset,
-    lab_title_sub = lab_title_sub,
-    x_angle = x_angle,
-    x_scale = x_scale,
-    date_in_set = date_in_set,
-    start_date = start_date,
-    end_date = end_date,
-    lab_caption = lab_caption
-  ))
-}
-```
-
-```{r function_units}
-settings_units <- function(dataset, var, cap_color, digits, lab_title = "Graph of",
-                           lab_fill = "Units", lab_unit = "units") {
-  
-  variable_of_interest_qt <- var
-  
-  # Defaults
-  lab_title_val <- variable_of_interest_qt
-  # y_line <- NULL
-  # Color scale will default set to start at 0, regardless of minimum in data
-  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = cap_color)
-  
-  if (str_detect(variable_of_interest_qt, "pm") == TRUE) {
-    lab_title_val <- "Particulate Matter (PM)"
-    # lab_unit <- expression(paste(mu, "g/m"^3))
-    #lab_unit <- expression(mu*"g/m"^3)
-    # lab_unit <- "µg/m^3"
-    lab_unit <- '*mu*"g/m"^3*'
-    
-    if (str_detect(variable_of_interest_qt, "(1.0)|(01)|(1$)|(1\\D)") == TRUE) {
-      pm_val <- 1.0
-      print("PM 1.0 detected")
-    } else if (str_detect(variable_of_interest_qt, "(25)|(2.5)") == TRUE) {
-      pm_val <- 2.5
-      print("PM 2.5 detected")
-    } else if (str_detect(variable_of_interest_qt, "(10)") == TRUE) {
-      pm_val <- 10
-      print("PM 10 detected")
-    } else {
-      pm_val <- NULL
-      print("PM unit undetermined")
-    }
-    lab_fill <- parse(text = paste0('PM[', pm_val, ']~"("', lab_unit,'")"'))
-    lab_unit <- "units"
-    # y_line <- geom_hline(yintercept = 0, linetype = "longdash", alpha = 0.5)
-    #bquote(PM[.(pm_val)]~"("*mu*"g/"*m^3*")")
-  }
-  
-  # Adjusting color scale and labels if the variable of interest is internal temperature
-  if (str_detect(variable_of_interest_qt, "temp") == TRUE) {
-    lab_title_val <- "internal temperature"
-    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15, na.value = cap_color)
-    print("Temperature detected as variable of interest; adjusting labels accordingly")
-    lab_unit <- "\u00B0F"
-    
-    if (str_detect(variable_of_interest_qt, "_c") == TRUE) {
-      lab_unit <- "\u00B0C"
-      print("Temperature detected to be in Celsius")
-    } else { print("Temperature assumed to be in Fahrenheit") }
-    
-    lab_fill <- paste0("Internal temperature (", lab_unit, ")")
-  }
-  
-  # Adjusting color scale and labels if the variable of interest is RH
-  if (str_detect(variable_of_interest_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
-    lab_title_val <- "humidity"
-    lab_unit <- "%"
-    lab_fill <- paste0("Relative humidity (", lab_unit, ")")
-    # y_line <- geom_hline(yintercept = c(0,100), linetype = "longdash", alpha = 0.5)
-    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9, na.value = cap_color)
-    print("RH detected as variable of interest; adjusting labels accordingly")
-  }
-  
-  # Getting min and max values from the data set
-  val_min <- dataset %>% select(variable_of_interest_qt) %>% min(na.rm = TRUE)
-  val_max <- dataset %>% select(variable_of_interest_qt) %>% max(na.rm = TRUE)
-  
-  lab_subtitle <- paste0("Variable plotted: ",
-                         variable_of_interest_qt,
-                         ", with a reported range of ",
-                         round(val_min, digits = digits),
-                         " to ",
-                         round(val_max, digits = digits),
-                         " ", lab_unit, ".")
-  
-  return(list(
-    # y_line = y_line,
-    lab_title = lab_title,
-    lab_title_val = lab_title_val,
-    lab_subtitle = lab_subtitle,
-    lab_fill = lab_fill,
-    fill_colors = fill_colors
-  ))
-}
-```
-
-```{r function_filtering}
-filter_df <- function(dataframe, location_data = data_meta, include = c(""), exclude = c("")) {
-  
-  input_labels <- paste0("(", paste(include, collapse = ")|("), ")")
-  exclude_labels <- paste0("(", paste(exclude, collapse = ")|("), ")")
-  
-  data_meta <- data_meta %>% 
-    filter(str_detect(label, input_labels))
-  
-  if(exclude_labels != "()"){
-    data_meta <- data_meta %>% 
-      filter(!str_detect(label, exclude_labels))
-  }
-  dataframe %>% 
-   filter(site_id %in% (data_meta %>% pull(site_id)))
-}
-```
-
-```{r,eval=FALSE}
-drop_incomplete <- function(dataset) {
-  # Number of values expected for a complete set
-  complete_num <- (dataset %>% 
-                     ungroup() %>% 
-                     count(site_id) %>% 
-                     arrange(desc(n)) %>% 
-                     pull(n))[1]
-  
-  # List of monitors with incomplete sets
-  to_drop <- dataset %>% 
-    ungroup() %>% 
-    count(site_id) %>% 
-    filter(n != complete_num) %>% 
-    pull(site_id)
-  
-  if (to_drop == character(0))
-  
-  # Feedback
-  print("Monitors with incomplete temporal data that will be dropped:")
-  print(paste(to_drop))
-  
-  # Removing incomplete monitors
-  dataset <- dataset %>% 
-    filter(!site_id %in% to_drop)
-  
-  return(dataset)
-}
-```
-
-```{r function_rounding}
-rounding_w_zeroes <- function(num, input_digits) {
-  input_digits <- {{input_digits}}
-  
-  as.character(
-    sprintf(
-      paste0("%.", deparse(substitute(input_digits)), "f"),
-      round(num, digits = input_digits)
-    )
-  )
-}
-```
-
