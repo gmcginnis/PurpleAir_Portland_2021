@@ -759,3 +759,416 @@ data_pa_hourly %>%
   geom_line() +
   theme(legend.position="bottom")
 ```
+
+
+## 27 Jun archiving
+
+```{r viz_function_map}
+# FUNCTION
+# Required inputs: pm_data (df), value (column of PM2.5 data w/in df to map), location_data (lat/long data to be joined to df; default: data_meta)
+# Optional inputs: grouping variables (1 or 2) w/ respective custom exclusions; filter for indoor/outdoor data
+# Other customization for map: type (stamen), zoom, tint & color, point size, color scale (virids)
+
+map_q <- function(pm_data, value, location_data = data_meta,
+                  grouping_var = NULL, exclude = NULL,
+                  grouping_var_2 = NULL, exclude_2 = NULL,
+                  outside = include_outside, inside = include_inside,
+                  label = c(""),
+                  maptype = "toner-lite", zoom = 11, tint = 0.5, tint_color = "black",
+                  point_size = 3, viridis = "viridis"){
+  
+  # Warning message and halting execution if required input is missing.
+  if (missing(value) == TRUE) {
+    stop ("ERROR in argument 'value': Missing input, with no default. Execution haulted. Please input a valid PM2.5 variable (e.g. epa_2021).")
+  }
+  
+  # Warning message and halting execution if inputeded data does not have more than one unique site_id (map will bug)
+  if (length(unique(pm_data$site_id)) == 1) {
+    stop("ERROR: Insufficient data to create a map. Provide a data set with more than one site.")
+  }
+  
+  input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
+  
+  # Wrangling based on provided inputs
+  data_temp <- pm_data %>% 
+    ungroup() %>% 
+    # Grouping by provided variables, as well as site_id
+    group_by_at(vars(site_id, {{grouping_var}}, {{grouping_var_2}})) %>% 
+    # Calculating means by said grouping variables
+    summarize(mean = mean({{value}}, na.rm = TRUE)) %>% 
+    drop_na(mean) %>% 
+    # Adding location data to get lat & lon
+    left_join(location_data) %>% 
+    # Selecting desired labels, if provided
+    filter(str_detect(label, input_labels))
+  
+  # Feedback message
+  print("Data now grouped and averaged. Location data added.")
+  
+  # Custom filtering: exclusions for input categories
+  if (is.null(exclude) == FALSE) {
+    to_exclude <- paste(exclude, collapse = "|")
+    data_temp <- data_temp %>% 
+      filter(!str_detect({{grouping_var}}, to_exclude))
+    print(paste("Excluded", exclude, "from", deparse(substitute(grouping_var))))
+  }
+  if (is.null(exclude_2) == FALSE) {
+    to_exclude_2 <- paste(exclude_2, collapse = "|")
+    data_temp <- data_temp %>% 
+      filter(!str_detect({{grouping_var_2}}, to_exclude_2))
+    print(paste("Excluded", exclude_2, "from", deparse(substitute(grouping_var_2))))
+  }
+  
+  # Default shapes for inside/outside
+  shapes_inout <- c("outside" = 21, "inside" = 23)
+  
+  # Custom filtering: exclusions for inside/outside
+  # Will also override shape arguments to prevent excluded category from showing in the legend
+  if (outside == FALSE) {
+    data_temp <- data_temp %>% 
+      filter(DEVICE_LOCATIONTYPE != "outside")
+    print("Outdoor data excluded")
+    shapes_inout <- c("inside" = 23)
+  }
+  if (inside == FALSE) {
+    data_temp <- data_temp %>% 
+      filter(DEVICE_LOCATIONTYPE != "inside")
+    print("Indoor data excluded")
+    shapes_inout <- c("outside" = 21)
+  }
+  
+  
+  # Labels for the plot
+  lab_title <- expression("PM"[2.5]*" values")
+  lab_subtitle <- paste("Data from PurpleAir. Data plotted:", deparse(substitute(value)))
+  lab_pm <- expression(paste("Average PM"[2.5]*" (", mu, "g/m"^3*"):"))
+  
+  # Base plot
+  plot <- qmplot(data = data_temp, x = longitude, y = latitude,
+         geom = "blank", maptype = maptype, zoom = zoom, darken = c(tint, tint_color)) +
+    facet_wrap(vars({{grouping_var}})) +
+    geom_point(
+      aes(fill = mean, shape = DEVICE_LOCATIONTYPE),
+      color = "white",
+      alpha = 0.8,
+      size = point_size
+    ) +
+    scale_fill_viridis(
+      option = {{viridis}},
+      direction = -1,
+      end = 0.85,
+      limits = c(0, NA)
+    ) +
+    theme_void() +
+    scale_shape_manual(values = shapes_inout) +
+    theme(
+      legend.position = "bottom",
+      legend.box = "vertical"
+    ) + 
+    guides(shape = guide_legend(override.aes = list(fill="black"))) +
+    labs(
+      title = lab_title,
+      subtitle = lab_subtitle,
+      fill = lab_pm,
+      shape = "Monitor location:",
+      caption = "Data not grouped."
+    )
+  
+  # Feedback message
+  print("Base plot created.")
+  
+  ## Faceting by grouping variable(s) and applying an appropriate caption to reflect the grouping
+  # Facet wrap if 1 grouping variable provided
+  if (deparse(substitute(grouping_var)) != "NULL" & deparse(substitute(grouping_var_2)) == "NULL") {
+    plot <- plot +
+      facet_wrap(vars({{grouping_var}})) +
+      labs(
+        caption = paste(
+          "Data grouped by",
+          (colnames(pm_data %>% select({{grouping_var}})))[1]
+        )
+      )
+    # Feedback message
+    print(paste("Plot now faceted by", deparse(substitute(grouping_var))))
+  }
+  # Facet grid if 2 grouping variables provided
+  if (deparse(substitute(grouping_var)) != "NULL" & deparse(substitute(grouping_var_2)) != "NULL") {
+    plot <- plot +
+      facet_grid(
+      formula(paste(
+        vars({{grouping_var_2}}),
+        "~",
+        vars({{grouping_var}})
+      ))) +
+      labs(
+        caption = paste(
+          "Data grouped by",
+          deparse(substitute(grouping_var)),
+          "and",
+          deparse(substitute(grouping_var_2))
+          )
+      )
+    # Feedback message
+    print(paste("Plot now faceted by",
+                deparse(substitute(grouping_var)),
+                "and",
+                deparse(substitute(grouping_var_2))
+                ))
+  }
+  
+  print("Final plot created.")
+  
+  # Returning the final plot
+  plot
+}
+```
+
+```{r test_map, eval=FALSE}
+map_q(data_hourly, value = epa_2021, grouping_var = hour_tag)
+
+data_hourly %>% 
+  column_dt("hour") %>% 
+  mutate(hour = as.factor(hour)) %>% 
+  map_q(value = epa_2021, grouping_var = hour, grouping_var_2 = date_tag, inside=FALSE)
+
+map_q(data_daily, value = epa_2020, grouping_var = date_tag, inside = FALSE)
+
+map_q(data_daily, value = lrapa, grouping_var = date_tag, exclude = "Fire")
+
+map_q(data_hourly, value = pm25_atm, grouping_var = hour_tag, exclude = "Afternoon", point_size = 5,
+      maptype = "terrain", tint = 0.3, tint_color = "white", viridis = "magma")
+```
+
+```{r function_units}
+settings_units <- function(dataset, var_qt, cap_color, digits, lab_title = "Graph of",
+                           lab_fill = "Units", lab_unit = "units") {
+  
+  # Defaults
+  lab_title_val <- var_qt
+  # y_line <- NULL
+  # Color scale will default set to start at 0, regardless of minimum in data
+  fill_colors <- scale_fill_viridis(option = "plasma", limits = c(0, NA), na.value = cap_color)
+  
+  if (str_detect(var_qt, "pm") == TRUE) {
+    lab_title_val <- "Particulate Matter (PM)"
+    # lab_unit <- expression(paste(mu, "g/m"^3))
+    #lab_unit <- expression(mu*"g/m"^3)
+    # lab_unit <- "µg/m^3"
+    lab_unit <- '*mu*"g/m"^3*'
+    
+    if (str_detect(var_qt, "(1.0)|(01)|(1$)|(1\\D)") == TRUE) {
+      pm_val <- 1.0
+      print("PM 1.0 detected")
+    } else if (str_detect(var_qt, "(25)|(2.5)") == TRUE) {
+      pm_val <- 2.5
+      print("PM 2.5 detected")
+    } else if (str_detect(var_qt, "(10)") == TRUE) {
+      pm_val <- 10
+      print("PM 10 detected")
+    } else {
+      pm_val <- NULL
+      print("PM unit undetermined")
+    }
+    lab_fill <- parse(text = paste0('PM[', pm_val, ']~"("', lab_unit,'")"'))
+    lab_unit <- "units"
+    # y_line <- geom_hline(yintercept = 0, linetype = "longdash", alpha = 0.5)
+    #bquote(PM[.(pm_val)]~"("*mu*"g/"*m^3*")")
+  }
+  
+  # Adjusting color scale and labels if the variable of interest is internal temperature
+  if (str_detect(var_qt, "temp") == TRUE) {
+    lab_title_val <- "internal temperature"
+    fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15, na.value = cap_color)
+    print("Temperature detected as variable of interest; adjusting labels accordingly")
+    lab_unit <- "\u00B0F"
+    
+    if (str_detect(var_qt, "_c") == TRUE) {
+      lab_unit <- "\u00B0C"
+      print("Temperature detected to be in Celsius")
+    } else { print("Temperature assumed to be in Fahrenheit") }
+    
+    lab_fill <- paste0("Internal temperature (", lab_unit, ")")
+  }
+  
+  # Adjusting color scale and labels if the variable of interest is RH
+  if (str_detect(var_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
+    lab_title_val <- "humidity"
+    lab_unit <- "%"
+    lab_fill <- paste0("Relative humidity (", lab_unit, ")")
+    # y_line <- geom_hline(yintercept = c(0,100), linetype = "longdash", alpha = 0.5)
+    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9, na.value = cap_color)
+    print("RH detected as variable of interest; adjusting labels accordingly")
+  }
+  
+  # Getting min and max values from the data set
+  val_min <- dataset %>% select(var_qt) %>% min(na.rm = TRUE)
+  val_max <- dataset %>% select(var_qt) %>% max(na.rm = TRUE)
+  
+  lab_subtitle <- paste0("Variable plotted: ",
+                         var_qt,
+                         ", with a reported range of ",
+                         round(val_min, digits = digits),
+                         " to ",
+                         round(val_max, digits = digits),
+                         " ", lab_unit, ".")
+  
+  return(list(
+    # y_line = y_line,
+    lab_title = lab_title,
+    lab_title_val = lab_title_val,
+    lab_subtitle = lab_subtitle,
+    lab_fill = lab_fill,
+    fill_colors = fill_colors
+  ))
+}
+```
+
+
+```{r viz_function_heatmap}
+heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE,
+                          cap_value = NA, cap_color = red,
+                          location_data = data_meta, digits = 2,
+                          start_date = input_startdate, end_date = input_enddate){
+  
+  # Dropping NA values from the variable of interest
+  # Will appear as gaps if viewing the complete viz, rather than gray
+  dataset <- dataset %>% 
+    drop_na({{variable_of_interest}})
+  
+  variable_of_interest_qt <- deparse(substitute(variable_of_interest))
+  
+  # If monitors with missing values for any time stamp are to be dropped
+  if (drop_incomplete == TRUE) {
+    # Number of values expected for a complete set
+    complete_num <- (dataset %>% 
+                       ungroup() %>% 
+                       count(site_id) %>% 
+                       arrange(desc(n)) %>% 
+                       pull(n))[1]
+    
+    # List of monitors with incomplete sets
+    to_drop <- dataset %>% 
+      ungroup() %>% 
+      count(site_id) %>% 
+      filter(n != complete_num) %>% 
+      pull(site_id)
+    
+    # Feedback
+    print("Monitors with incomplete temporal data that will be dropped:")
+    print(paste(to_drop))
+    
+    # Removing incomplete monitors
+    dataset <- dataset %>% 
+      filter(!site_id %in% to_drop)
+    
+  } else { print("All monitors will be plotted.") }
+  
+  # Adding quotation marks
+  cap_color <- deparse(substitute(cap_color)) %>%
+    str_replace_all("\\\"", "") # Removing extra quotation marks if already provided
+  
+  # Location data
+  temp_loc <- location_data %>% 
+    # Arranging such that northern-most monitors will be on top
+    mutate(label = fct_reorder(as.factor(label), desc(latitude))) %>% 
+    # Selecting only variables of interest to save space
+    select(site_id, label, DEVICE_LOCATIONTYPE)
+  
+  unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt, cap_color = cap_color,
+                                 lab_title = "Heatmap of")
+  
+  lab_title <- unit_results$lab_title
+  lab_title_val <- unit_results$lab_title_val
+  lab_subtitle <- unit_results$lab_subtitle
+  lab_fill <- unit_results$lab_fill
+  fill_colors <- unit_results$fill_colors
+  
+  cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                      color = "none")
+
+  # If manually applying a max filter value
+  if (is.na(cap_value) == FALSE) {
+    # Getting number of rows at or above the cap
+    nrow_hi <- dataset %>%
+      filter({{variable_of_interest}} >= cap_value) %>%
+      nrow()
+
+    if ((nrow_hi > 0) == TRUE) {
+      # Replacing the values above the set max to be NA so that they will be colored differently on the map
+      dataset <- dataset %>%
+        mutate_at(vars({{variable_of_interest}}), ~replace(., which(.>={{cap_value}}), NA))
+
+      # Updated lab caption to include the filter
+      lab_subtitle <- paste0("Color scale manually capped at ",
+                             cap_value, " units; all higher values colored ", cap_color,
+                             ".\n", lab_subtitle)
+
+      # Feedback
+      print(paste("Values greater than or equal to",
+                  {{cap_value}},
+                  "in",
+                  variable_of_interest_qt,
+                  "will be colored",
+                  cap_color))
+
+      cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
+                          color = guide_legend(
+                            title = paste0(cap_value, "+"),
+                            order = 2,
+                            title.position = "bottom",
+                            title.theme = element_text(size = 10),
+                            override.aes = list(color = cap_color, fill = cap_color)
+                          ))
+    } else {
+      print(paste0("No values greater than or equal to ",
+                   {{cap_value}},
+                   " found in ",
+                   variable_of_interest_qt,
+                   "; color cap will not be applied."))
+    }
+  }
+  
+  scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  
+  dataset <- scale_results$dataset
+  lab_title_sub <- scale_results$lab_title_sub
+  x_angle <- scale_results$x_angle
+  x_scale <- scale_results$x_scale
+  lab_caption <- scale_results$lab_caption
+  
+  lab_caption <- paste0(lab_caption, "\nMonitors are arranged north to south in their respective groups.")
+  
+  
+  dataset %>% 
+    distinct() %>% 
+    left_join(temp_loc) %>% 
+    ggplot(aes(
+      x = timestamp,
+      y = label,
+      color = "",
+      fill = {{variable_of_interest}}
+    )) +
+    facet_grid(DEVICE_LOCATIONTYPE~., scales = "free_y", space = "free_y") +
+    geom_tile() +
+    fill_colors + 
+    scale_y_discrete(limits = rev) + 
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      panel.grid = element_blank(),
+      panel.border = element_blank(),
+      axis.text.x = element_text(angle = x_angle, hjust = 1),
+      axis.title = element_blank(),
+      axis.ticks.x = element_line()
+    ) + 
+    labs(
+      title = paste(lab_title, lab_title_val, lab_title_sub),
+      subtitle = lab_subtitle,
+      fill = lab_fill,
+      caption = lab_caption
+    ) +
+    x_scale + 
+    scale_color_manual(values = "transparent") +
+    cap_guide
+}
+```
