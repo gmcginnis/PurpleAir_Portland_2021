@@ -94,6 +94,9 @@ input_selects <- c(
 file_list <- list.files(path = input_path,
                         pattern = input_path_filter,
                         full.names = TRUE)
+
+input_startdate <- min((data_pa %>% column_dt("date"))$date)
+input_enddate <- max((data_pa %>% column_dt("date"))$date)
 ```
 
 ```{r location_index}
@@ -125,7 +128,8 @@ data_pa_meta <- data.frame(source = file_list) %>%
   ) %>% 
   mutate(
     site_id = label,
-    timezone = input_timezone
+    timezone = input_timezone,
+    flag_highValue = NA
   )
 ```
 
@@ -250,12 +254,6 @@ data_pa <- raw_pa_data %>%
 
 remove(cols_to_pivot)
 ```
-
-```{r dates}
-input_startdate <- min((data_pa %>% column_dt("date"))$date)
-input_enddate <- max((data_pa %>% column_dt("date"))$date)
-```
-
 
 ```{r auto_apply}
 data_pa_hourly <- apply_functions(data_pa, by_day = TRUE, by_hour = TRUE)

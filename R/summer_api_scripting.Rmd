@@ -1214,10 +1214,10 @@ map_q(data_hourly, pm25_atm, cap_value = 17, cap_color = "black", grouping_vars 
 ```
 
 ```{r viz_function_single_heatmap}
-heatmap_single <- function(dataset = data_hourly, variable_of_interest, site_of_interest,
+heatmap_single <- function(variable_of_interest, site_of_interest,
                            cap_value = NA, cap_color = "red",
                            data_labels = TRUE, digits = 2, date_breaks = "1 day",
-                           text_color = "black", location_data = data_meta){
+                           text_color = "black", dataset = data_hourly, location_data = data_meta){
   
   if ("date_hour" %in% colnames(dataset) == FALSE) { stop("ERROR: Inputted data set is not hourly by day") }
   
@@ -1245,10 +1245,11 @@ heatmap_single <- function(dataset = data_hourly, variable_of_interest, site_of_
     # Removing empty values from variable of interest (otherwise is grey when mapping)
     drop_na({{variable_of_interest}}) %>% 
     # Removing duplicate rows
-    distinct()
+    distinct() %>% 
+    mutate(val_orig = {{variable_of_interest}})
   
-  dataset_vals <- dataset %>%
-    select("date_hour", "vals" = variable_of_interest_qt)
+  # dataset_vals <- dataset %>%
+  #   select("date_hour", "vals" = variable_of_interest_qt)
   
   # Verification that only one monitor is selected. Execution will halt if 0 or >1 are detected
   if (length(unique(dataset$label)) == 0) {
@@ -1290,39 +1291,50 @@ heatmap_single <- function(dataset = data_hourly, variable_of_interest, site_of_
   
   
   if (data_labels == TRUE) {
-    data_labels <- geom_text(
-      inherit.aes = FALSE,
-      data = dataset_vals,
-      aes(
-        x = date(date_hour),
-        y = hour(date_hour),
-        label = rounding_w_zeroes(vals, digits)
-      ),
-      color = {{text_color}}
-    )
-    # data_labels <- geom_text(color = {{text_color}})
+    # data_labels <- geom_text(
+    #   inherit.aes = FALSE,
+    #   data = dataset_vals,
+    #   aes(
+    #     x = date(date_hour),
+    #     y = hour(date_hour),
+    #     label = rounding_w_zeroes(vals, digits)
+    #   ),
+    #   color = {{text_color}}
+    # )
+    data_labels <- geom_text(color = {{text_color}})
   } else { data_labels <- NULL }
   
   # Plotting data
   dataset %>% 
+    # column_dt("hour") %>% 
+    # mutate(hour = as_datetime(hour)) %>% 
     ggplot(aes(
       x = date(date_hour),
+      # y = hour,
+      # y = date_hour,
       y = hour(date_hour),
       fill = {{variable_of_interest}},
-      color = ""
-      # label = rounding_w_zeroes({{variable_of_interest}}, digits)
+      color = "",
+      label = rounding_w_zeroes(val_orig, digits)
     )) +
     geom_tile() +
     fill_colors +
     data_labels +
-    # Setting scale breaks such that 0:23 will always display, regardless of data availability
-    scale_y_continuous(trans = "reverse", # Reverse such that morning is at top, night at bottom
-                       labels = function(x) sprintf("%02d:00", x), # labeling with proper hourly formatting
-                       breaks = 0:23, # breaks every hour
-                       limits = c(24,-1)) +
-    scale_x_date(breaks = date_breaks,
-                 expand = c(0.01, 0.01),
-                 date_labels = "%d %b") +
+    scale_y_continuous(
+      # Reverse such that morning is at top, night at bottom
+      trans = "reverse",
+      # labeling with proper hourly formatting
+      labels = function(x) sprintf("%02d:00", x),
+      # # Limits to force axis to always display 00 to 24 hr, regardless of availability
+      # limits = c(24,-1),
+      # breaks every hour
+      breaks = 0:23
+    ) +
+    scale_x_date(
+      breaks = date_breaks,
+      expand = c(0.01, 0.01),
+      date_labels = "%d %b"
+    ) +
     theme_minimal() +
     theme(
       legend.position = "bottom",
@@ -1344,10 +1356,8 @@ heatmap_single <- function(dataset = data_hourly, variable_of_interest, site_of_
 ```
 
 ```{r test_heatmap_single, eval=FALSE}
-# heatmap_single(data_hourly, "Indigo", epa_2021)
-# heatmap_single(data_hourly, "Indigo", humidity)
-heatmap_single(data_hourly, epa_2021, "Sunset", cap_value = 15)
-heatmap_single(data_hourly, epa_2021, "Sunset")
+heatmap_single(epa_2021, "Sunset", cap_value = 15)
+heatmap_single(epa_2021, "Sunset")
 heatmap_single(variable_of_interest = pm25_atm, site_of_interest = "Lighthouse", cap_value = 20, cap_color = "green", data_label = F)
 ```
 
@@ -1636,7 +1646,8 @@ ts_line <- function(dataset, variable_of_interest,
       min.segment.length = 0,
       box.padding = 0.75,
       max.overlaps = Inf,
-      color = "royalblue"
+      color = "royalblue",
+      nudge_y = max(dataset$var, na.rm = TRUE) / 3
     ) +
     theme_minimal() +
     x_scale +
