@@ -9,7 +9,8 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r fixing_qmplot, eval=FALSE}
+```{r fixing_qmplot, eval = FALSE}
+# This chunk only needs to be run once, upon initial setup
 detach("package:ggmap")
 remove.packages("ggmap")
 
@@ -30,12 +31,12 @@ library(ggrepel)
 
 
 ```{r inputs}
+### REQUIRED inputs
+
 # REQUIRED: Start and end dates of interest. Please use the following format: "YYYY-MM-DD", with leading zeros where appropriate
 # Data will be pulled from the start of the start date through the end of the end date
 input_startdate <- "2021-07-01"
 input_enddate <- "2021-07-08"
-# input_startdate <- "2021-07-10"
-# input_enddate <- "2021-07-13"
 
 ## REQUIRED: Inside/Outside argument. At least one of the following must be TRUE.
 # Grab data for outdoor sensors?
@@ -46,8 +47,11 @@ include_inside <- TRUE
 # Drop monitors flagged as reporting high values?
 input_drop_hi <- TRUE
 
+
+### RECOMMENDED (but optional) inputs
+# The following are optional but recommended. Set to NULL if not interested in filtering by the following.
+
 ## INPUTS FOR GETTING PAS & PAT
-## The following are optional but recommended. Set to NULL if not interested in filtering by the following.
 # State of monitors to include. If NULL/unspecified, all monitors specified in the above boundaries will be included regardless of state
 input_stateCode <- "OR"
 
@@ -61,12 +65,13 @@ input_north <- 45.6
 # Labels of monitors to include. If NULL/unspecified, all monitors will be included.
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Example format below. Capitalization matters!
-# \\b is added where we want only values that report those words on their own (ex. STAR-LAB and not STARSYSTEM1)
+# \\b is added where we want only values that report those words on their own (ex. STAR-LAB and not MYSTARSYSTEM1)
 input_labels <- c("se", "SE", "Se", "\\bSTAR\\b", "\\bPSU\\b")
-# input_labels <- c("Indigo")
 
-# Optional grouping settings
-## DATE GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
+
+## Optional grouping settings (which will NOT impact raw data output, but can be useful when graphing)
+
+## DATE GROUPING
 # Run date grouping? If set to "FALSE", the date inputs below will not matter (but will still appear in the environment)
 run_date_grouping <- TRUE
 # Date grouping categories:
@@ -76,7 +81,7 @@ input_date_starts <- c("2021-07-01", "2021-07-04", "2021-07-05")
 # End dates (in a list, "YYYY-MM-DD")
 input_date_ends <- c("2021-07-03", "2021-07-04", "2021-07-08")
 
-## HOUR GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
+## HOUR GROUPING
 # Run hour grouping? If set to "FALSE", the hour inputs below will not matter (but will still appear in the environment)
 run_hour_grouping <- TRUE
 # Hour grouping categories:
@@ -980,6 +985,10 @@ drop_incomplete <- function(dataset) {
 ```
 
 ```{r function_rounding}
+# INPUT: numeric value(s) to round, and the number of digits to preserve
+# OUTPUT: character versions rounded to the number of digits specified, including trailing zeroes
+# PURPOSE: When pasting labels, R will not display trailing zeroes; this is a way to work around it
+# NOTES: The result can be returned to a numeric class if desired
 rounding_w_zeroes <- function(num, input_digits) {
   input_digits <- {{input_digits}}
   
@@ -1036,14 +1045,23 @@ add_cap <- function(dataset, var_qt, cap_value, cap_color) {
         "will be colored", cap_color
       ))
       
-      cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
-                          color = guide_legend(
-                            title = paste0(cap_value, "+"),
-                            order = 2,
-                            title.position = "bottom",
-                            title.theme = element_text(size = 10),
-                            override.aes = list(color = cap_color, fill = cap_color)
-                          ))
+      cap_guide <- guides(
+        fill = guide_colorbar(
+          order = 1,
+          barwidth = 10
+        ),
+        color = guide_legend(
+          title = paste0(cap_value, "+"),
+          order = 2,
+          title.position = "bottom",
+          title.theme = element_text(size = 8.5),
+          override.aes = list(
+            color = cap_color,
+            fill = cap_color,
+            shape = 22,
+            size = 7
+          )
+        ))
     } else { print("Error.") }
   }
   
@@ -1052,6 +1070,35 @@ add_cap <- function(dataset, var_qt, cap_value, cap_color) {
     lab_subtitle_cap = lab_subtitle_cap,
     cap_guide = cap_guide
   ))
+}
+```
+
+```{r function_drop_incomplete}
+drop_incomplete <- function(dataset, var_qt) {
+  dataset <- dataset %>% 
+    drop_na({{var_qt}})
+  
+  # Number of values expected for a complete set
+  complete_num <- (dataset %>% 
+                     ungroup() %>% 
+                     count(site_id) %>% 
+                     arrange(desc(n)) %>% 
+                     pull(n))[1]
+  
+  # List of monitors with incomplete sets
+  to_drop <- dataset %>% 
+    ungroup() %>% 
+    count(site_id) %>% 
+    filter(n != complete_num) %>% 
+    pull(site_id)
+  
+  # Feedback
+  print("Monitors with incomplete temporal data that will be dropped:")
+  print(paste(to_drop))
+  
+  # Removing incomplete monitors
+  dataset %>% 
+    filter(!site_id %in% to_drop)
 }
 ```
 
@@ -1101,6 +1148,7 @@ map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_
   
   # Creating a list of unique monitor locations
   unique_locs <- unique(dataset$DEVICE_LOCATIONTYPE)
+  shape_nrow <- length(unique_locs)
   
   if (any(unique_locs == "outside") & any(unique_locs == "inside")) {
     shapes_inout <- c("outside" = 21, "inside" = 23)
@@ -1143,10 +1191,11 @@ map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_
     theme_void() +
     scale_shape_manual(values = shapes_inout) +
     theme(
-      legend.position = "bottom",
-      legend.box = "vertical"
+      # legend.box = "vertical",
+      legend.position = "bottom"
     ) + 
-    guides(shape = guide_legend(override.aes = list(fill="black"))) +
+    # CHANGE iS HERE
+    guides(shape = guide_legend(override.aes = list(fill="black"), nrow = shape_nrow)) +
     labs(
       title = paste(lab_title, lab_title_val),
       subtitle = lab_subtitle,
@@ -1208,7 +1257,7 @@ map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_
 ```
 
 ```{r test_map, eval=FALSE}
-map_q(data_daily, variable_of_interest = pm25_atm, grouping_vars = "date_tag", cap_value = 14)
+map_q(data_daily, variable_of_interest = pm25_atm, grouping_vars = "date_tag", cap_value = 12)
 map_q(data_daily, variable_of_interest = pm25_atm, cap_value = 11)
 map_q(data_hourly, pm25_atm, cap_value = 17, cap_color = "black", grouping_vars = c("hour_tag", "date_tag"))
 ```
@@ -1234,7 +1283,7 @@ heatmap_single <- function(variable_of_interest, site_of_interest,
   }
   
   temp_loc <- location_data %>% 
-    select(site_id, label)
+    select(site_id, label, DEVICE_LOCATIONTYPE)
   
   dataset <- dataset %>% 
     ungroup() %>% 
@@ -1268,9 +1317,12 @@ heatmap_single <- function(variable_of_interest, site_of_interest,
   
   lab_title <- unit_results$lab_title
   lab_title_val <- unit_results$lab_title_val
-  lab_subtitle <- paste0("Monitor selected: \"", dataset %>% pull(label),
-                         "\" (ID: ", dataset %>% pull(site_id),").\n",
-                        unit_results$lab_subtitle)
+  lab_subtitle <- paste0(
+    "Monitor selected: \"", dataset %>% pull(label),
+    "\" (", dataset %>% pull(DEVICE_LOCATIONTYPE),
+    ", ID: ", dataset %>% pull(site_id),").\n",
+    unit_results$lab_subtitle
+  )
   lab_fill <- unit_results$lab_fill
   fill_colors <- unit_results$fill_colors
   
@@ -1291,27 +1343,13 @@ heatmap_single <- function(variable_of_interest, site_of_interest,
   
   
   if (data_labels == TRUE) {
-    # data_labels <- geom_text(
-    #   inherit.aes = FALSE,
-    #   data = dataset_vals,
-    #   aes(
-    #     x = date(date_hour),
-    #     y = hour(date_hour),
-    #     label = rounding_w_zeroes(vals, digits)
-    #   ),
-    #   color = {{text_color}}
-    # )
     data_labels <- geom_text(color = {{text_color}})
   } else { data_labels <- NULL }
   
   # Plotting data
   dataset %>% 
-    # column_dt("hour") %>% 
-    # mutate(hour = as_datetime(hour)) %>% 
     ggplot(aes(
       x = date(date_hour),
-      # y = hour,
-      # y = date_hour,
       y = hour(date_hour),
       fill = {{variable_of_interest}},
       color = "",
@@ -1323,11 +1361,11 @@ heatmap_single <- function(variable_of_interest, site_of_interest,
     scale_y_continuous(
       # Reverse such that morning is at top, night at bottom
       trans = "reverse",
-      # labeling with proper hourly formatting
+      # Labeling with proper hourly formatting
       labels = function(x) sprintf("%02d:00", x),
       # # Limits to force axis to always display 00 to 24 hr, regardless of availability
       # limits = c(24,-1),
-      # breaks every hour
+      # Breaks every hour
       breaks = 0:23
     ) +
     scale_x_date(
@@ -1356,48 +1394,29 @@ heatmap_single <- function(variable_of_interest, site_of_interest,
 ```
 
 ```{r test_heatmap_single, eval=FALSE}
-heatmap_single(epa_2021, "Sunset", cap_value = 15)
-heatmap_single(epa_2021, "Sunset")
+heatmap_single(pm25_atm, "Sunset", cap_value = 15)
+heatmap_single(pm25_atm, "Sunset")
 heatmap_single(variable_of_interest = pm25_atm, site_of_interest = "Lighthouse", cap_value = 20, cap_color = "green", data_label = F)
 ```
 
 ```{r viz_function_heatmap}
 heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE,
-                          cap_value = NA, cap_color = red,
+                          cap_value = NA, cap_color = "red",
+                          data_labels = FALSE, text_color = "black",
                           location_data = data_meta, digits = 2,
                           start_date = input_startdate, end_date = input_enddate){
   
   # Dropping NA values from the variable of interest
-  # Will appear as gaps if viewing the complete viz, rather than gray
+  # NA values will appear as gaps if viewing the complete viz, rather than gray
+  # Adding another column with duplicate info, in case a color cap applied AND text labeling is desired
   dataset <- dataset %>% 
-    drop_na({{variable_of_interest}})
+    drop_na({{variable_of_interest}}) %>% 
+    mutate(val_orig = {{variable_of_interest}})
   
   variable_of_interest_qt <- deparse(substitute(variable_of_interest))
   
-  # If monitors with missing values for any time stamp are to be dropped
   if (drop_incomplete == TRUE) {
-    # Number of values expected for a complete set
-    complete_num <- (dataset %>% 
-                       ungroup() %>% 
-                       count(site_id) %>% 
-                       arrange(desc(n)) %>% 
-                       pull(n))[1]
-    
-    # List of monitors with incomplete sets
-    to_drop <- dataset %>% 
-      ungroup() %>% 
-      count(site_id) %>% 
-      filter(n != complete_num) %>% 
-      pull(site_id)
-    
-    # Feedback
-    print("Monitors with incomplete temporal data that will be dropped:")
-    print(paste(to_drop))
-    
-    # Removing incomplete monitors
-    dataset <- dataset %>% 
-      filter(!site_id %in% to_drop)
-    
+    dataset <- drop_incomplete(dataset, var_qt = variable_of_interest_qt)
   } else { print("All monitors will be plotted.") }
   
   # Adding quotation marks
@@ -1437,19 +1456,30 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   
   lab_caption <- paste0(lab_caption, "\nMonitors are arranged north to south in their respective groups.")
   
+  if (data_labels == TRUE) {
+    data_labels <- geom_text(color = {{text_color}})
+  } else { data_labels <- NULL }
   
   dataset %>% 
     distinct() %>% 
     left_join(temp_loc) %>% 
-    ggplot(aes(
-      x = timestamp,
-      y = label,
-      color = "",
-      fill = {{variable_of_interest}}
-    )) +
-    facet_grid(DEVICE_LOCATIONTYPE~., scales = "free_y", space = "free_y") +
+    ggplot(
+      aes(
+        x = timestamp,
+        y = label,
+        color = "",
+        fill = {{variable_of_interest}},
+        label = rounding_w_zeroes(val_orig, digits)
+      )
+    ) +
+    facet_grid(
+      DEVICE_LOCATIONTYPE~.,
+      scales = "free_y",
+      space = "free_y"
+    ) +
     geom_tile() +
     fill_colors + 
+    data_labels +
     scale_y_discrete(limits = rev) + 
     theme_minimal() +
     theme(
@@ -1472,20 +1502,20 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
 }
 ```
 
-```{r test_heatmap, eval=FALSE}
+```{r test_heatmap, eval = FALSE}
 heatmap_cross(data_hourly, pm25_atm)
-heatmap_cross(data_daily, temperature)
+heatmap_cross(data_daily, humidity, data_labels = TRUE)
 heatmap_cross(data_diurnal, pm25_atm, cap_value = 10, cap_color = "green")
 heatmap_cross(data_pm25, pm25_atm, cap_value = 50, cap_color = "green")
 ```
 
 ```{r viz_function_ts}
 ts_line <- function(dataset, variable_of_interest,
-                    add_points = FALSE,
-                    single_column = FALSE, include_avg = TRUE,
-                    label = c(""),
-                    digits = 2, label_length = 10,
+                    add_points = FALSE, digits = 2,
+                    single_column = FALSE, label_length = 10,
+                    include_avg = TRUE, label = c(""),
                     location_data = data_meta,
+                    min_color = "royalblue", max_color = "darkorange", avg_color = "darkgreen",
                     start_date = input_startdate, end_date = input_enddate){
   
   variable_of_interest_qt <- deparse(substitute(variable_of_interest))
@@ -1518,7 +1548,8 @@ ts_line <- function(dataset, variable_of_interest,
   lab_dates <- scale_results$lab_caption
   lab_caption <- paste("Black lines indiciate the data for a specific monitor of interest.",
                        "Gray lines represent data from all monitors.",
-                       "\nMaximum and minimum values by monitor are marked by orange and blue text, respectively.")
+                       "\nMaximum and minimum values by monitor are marked by", max_color, "and", min_color, "text, respectively.")
+                       # "\nMaximum and minimum values by monitor are marked by orange and blue text, respectively.")
   
   unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt, cap_color = NA,
                                  lab_title = "Timeseries of")
@@ -1581,7 +1612,8 @@ ts_line <- function(dataset, variable_of_interest,
     
     print("Average data added.")
     
-    lab_caption <- paste(lab_caption, "\nThe green graph represents the moving average of all monitors in the data set.")
+    lab_caption <- paste(lab_caption, "\nThe", avg_color, "colored graph represents the moving average of all monitors in the data set.")
+    # lab_caption <- paste(lab_caption, "\nThe green graph represents the moving average of all monitors in the data set.")
     
   } else {
     label_order <- fct_inorder(levels(label_order))
@@ -1613,23 +1645,23 @@ ts_line <- function(dataset, variable_of_interest,
       alpha = 0.5
     ) +
     geom_line(
-      data = . %>% filter(site_id!="Averages"),
+      data = . %>% filter(site_id != "Averages"),
       color = "black"
     ) +
     geom_line(
-      data = . %>% filter(site_id=="Averages"),
-      color = "darkgreen"
+      data = . %>% filter(site_id == "Averages"),
+      color = avg_color
     ) +
     data_points + 
     fill_colors +
     geom_point(
       data = . %>% filter(!is.na(max)),
-      color = "darkorange",
+      color = max_color,
       shape = 1
     ) +
     geom_point(
       data = . %>% filter(!is.na(min)),
-      color = "royalblue",
+      color = min_color,
       shape = 1
     ) +
     geom_text_repel(
@@ -1638,7 +1670,7 @@ ts_line <- function(dataset, variable_of_interest,
       min.segment.length = 0,
       box.padding = 0.75,
       max.overlaps = Inf,
-      color = "darkorange"
+      color = max_color
     ) +
     geom_text_repel(
       data = . %>% mutate(min = replace_na(min, "")),
@@ -1646,7 +1678,7 @@ ts_line <- function(dataset, variable_of_interest,
       min.segment.length = 0,
       box.padding = 0.75,
       max.overlaps = Inf,
-      color = "royalblue",
+      color = min_color,
       nudge_y = max(dataset$var, na.rm = TRUE) / 3
     ) +
     theme_minimal() +
