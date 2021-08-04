@@ -434,6 +434,20 @@ apply_qc <- function(dataset, avg_ab = TRUE){
 }
 ```
 
+```{r function_temperature}
+ambient_temperature <- function(dataset, variable = temperature, change = temperature_change) {
+  
+  var_qt <- deparse(substitute(variable))
+  
+  if(var_qt %in% colnames(dataset) == TRUE & str_detect(var_qt, "_c") == FALSE) {
+    dataset <- dataset %>% 
+      mutate(temperature_ambient = {{variable}} - change)
+    print(paste("Ambient temperature column added using an adjustment of", change))
+  } else { print("Temperature not detected, or in degrees Celsius. Please rename the variable or specify it manually.") }
+  return(dataset)
+}
+```
+
 ```{r data_qc}
 # Basic subsetting and quality control
 
@@ -446,6 +460,7 @@ data_pm25 <- raw_data %>%
   apply_qc() %>% 
   # Adjusting to be reported time zone (see above function)
   adjust_timezone() %>% 
+  ambient_temperature() %>% 
   # Reordering variables for ease of reading
   select(site_id, datetime, everything())
 
@@ -464,7 +479,7 @@ if (input_drop_hi == TRUE) {
 ```
 
 ```{r eclean_qc, eval=FALSE}
-remove(apply_qc, adjust_timezone)
+remove(apply_qc, adjust_timezone, ambient_temperature)
 ```
 
 ```{r function_epa}
@@ -618,30 +633,16 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE, keep_cols = FAL
 }
 ```
 
-```{r function_temperature}
-apply_temperature <- function(dataset, variable = temperature, change = temperature_change) {
-  
-  var_qt <- deparse(substitute(variable))
-  
-  if(var_qt %in% colnames(dataset) == TRUE & str_detect(var_qt, "_c") == FALSE) {
-    dataset <- dataset %>% 
-      mutate(temperature_ambient = {{variable}} + change)
-    print(paste("Ambient temperature column added using an adjustment of", change))
-  }
-  return(dataset)
-}
-```
 
 
 ```{r function_corrections}
-apply_corrections <- function(dataset, daily = TRUE, hourly = FALSE, epa = 75, temp_change = temperature_change){
+apply_corrections <- function(dataset, daily = TRUE, hourly = FALSE, epa = 75){
   epa <- apply_epa(dataset, by_day = daily, by_hour = hourly, epa_percent = epa, keep_cols = TRUE)
   print("EPA corrections applied")
   lrapa <- apply_lrapa(dataset, by_day = daily, by_hour = hourly, keep_cols = TRUE)
   print("LRAPA corrections applied")
   
-  dataset_corrected <- full_join(epa, lrapa) %>% 
-    apply_temperature(change = temp_change)
+  dataset_corrected <- full_join(epa, lrapa)
   print("Data frame of corrected values created")
   return(dataset_corrected)
 }
@@ -771,7 +772,7 @@ remove(list = c(ls(pattern = "input_(hour|date)_")))
 ```
 
 ```{r function_dt_scale}
-settings_dt_scale <- function(dataset, start_date, end_date) {
+settings_dt_scale <- function(dataset, start_date = input_startdate, end_date = input_enddate) {
   # Expanding axis to allow monitor labels to be closer to the data
   options_expand <- expansion(mult = c(0.01, 0.01))
   x_angle <- 30
@@ -817,7 +818,7 @@ settings_dt_scale <- function(dataset, start_date, end_date) {
   start_date <- format(start_date, "%d %b %Y")
   end_date <- format(end_date, "%d %b %Y")
   
-  lab_caption <- paste0("Data from ", start_date, " to ", end_date, ".")
+  lab_caption <- paste0("Data from ", start_date, " through ", end_date, ".")
   
   return(list(
     dataset = dataset,
@@ -1850,3 +1851,58 @@ ts_line(data_hourly, pm25_epa_2021, label = "STAR", include_avg = FALSE)
 
 ts_line(data_hourly, pm25_epa_2021, label = c("STAR", "Woodlands"), add_points = TRUE)
 ```
+
+
+```{r viz_ts_variation}
+ts_variation <- function(dataset, pollutants, group,
+                         subset = c("hour", "day.hour", "day", "month"),
+                         include, exclude,
+                         location_data = data_meta,
+                         color = "Dark2"){
+  if (missing(include) == FALSE) {
+    dataset <- filter_df(dataset, include = include, location_data = location_data)
+  }
+  if (missing(exclude) == FALSE) {
+    dataset <- filter_df(dataset, exclude = exclude, location_data = location_data)
+  }
+  
+  if ("date" %in% colnames(dataset) == FALSE) {
+    dataset <- (settings_dt_scale(dataset))$dataset %>% rename(date = timestamp)
+  }
+  
+  if (missing(group) == TRUE) {
+    plot <- timeVariation(dataset, pollutant = pollutants, cols = color)
+  } else {
+    if (group %in% colnames(dataset) == TRUE) {
+      plot <- timeVariation(dataset, pollutant = pollutants, cols = color, group = group)
+    } else {
+      print(paste("ERROR: grouping variable", group, "not found in dataset. Plot will not be grouped."))
+      plot <- timeVariation(dataset, pollutant = pollutants, cols = color)
+    }
+  }
+  
+  if (length(subset) == 1) {
+    if(subset %in% c("hour", "day.hour", "day", "month") == FALSE) {
+      print("Invalid plotting subset value. Defaulting to plotting all.")
+      pluck <- NULL
+    } else {
+      print(paste("Plot selected:", subset))
+      pluck <- subset
+    }
+  } else { pluck <- NULL }
+  remove(subset)
+  
+  plot_final <- plot %>%
+    plot(subset = pluck)
+  
+  return(plot_final)
+}
+```
+
+```{r ts_variation_testing}
+ts_variation(data_hourly, "pm25_atm", include = "Lighthouse", group = "date_tag")
+ts_variation(data_pm25 %>% apply_date_tags(), c("pm25_atm", "pm25_lrapa"), include = "Lighthouse", group = "date_tag")
+ts_variation(data_pm25, pollutants= c("pm25_atm", "temperature"), include = "Lighthouse")
+```
+
+

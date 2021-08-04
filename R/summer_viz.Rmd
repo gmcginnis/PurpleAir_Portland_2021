@@ -13,26 +13,26 @@ knitr::opts_chunk$set(echo = TRUE)
 library(openair)
 
 calendarPlot(
-  data_daily, pollutant = "epa_2021", year = 2021,
+  data_daily, pollutant = "pm25_epa_2021", year = 2021,
   annotate = "value",
   cols = "Purples"
 )
 
 data_hourly %>% 
   rename(date = date_hour) %>% 
-  timeVariation(pollutant = c("lrapa", "pm25_atm", "epa_2021"))
+  timeVariation(pollutant = c("pm25_lrapa", "pm25_atm", "pm25_epa_2021"))
 
 
 data_hourly %>% 
   rename(date = date_hour) %>% 
-  timeVariation(pollutant = c("epa_2020", "epa_2021", "epa_atm"))
+  timeVariation(pollutant = c("pm25_epa_2020", "pm25_epa_2021", "epa_atm"))
 
 data_hourly %>% 
-  # left_join(data_meta) %>% 
-  # filter(label == "Lighthouse") %>% 
-  apply_date_tags() %>% 
+  # left_join(data_meta) %>%
+  # filter(label == "Lighthouse") %>%
+  # apply_date_tags() %>% 
   rename(date = date_hour) %>% 
-  timeVariation(pollutant = "epa_2021", group = "date_tag", cols = "Dark2")
+  timeVariation(pollutant = "pm25_epa_2021", group = "date_tag", cols = "Dark2")
 
 data_deq %>% 
   apply_date_tags() %>% 
@@ -53,14 +53,14 @@ data_deq %>%
 
 data_hourly %>% 
   filter(site_id == "6c18a7181a09037c_47107") %>% 
-  select(site_id, date_hour, date_tag, hour_tag, epa_2021) %>% 
+  select(site_id, date_hour, date_tag, hour_tag, pm25_epa_2021) %>% 
   full_join(data_deq %>% select(date_hour, pm25_deq, wind_speed, wind_direction)) %>% 
   rename(
     "ws" = "wind_speed",
     "wd" = "wind_direction"
   ) %>% 
   polarPlot(
-    pollutant = "epa_2021",
+    pollutant = "pm25_epa_2021",
     col = "Purples"
   )
 
@@ -93,7 +93,7 @@ data_hourly %>%
     )
   ) %>% 
   apply_date_tags() %>% 
-  ggplot(aes(x = hour, y = epa_2021, group = date, color = tag)) +
+  ggplot(aes(x = hour, y = pm25_epa_2021, group = date, color = tag)) +
   #facet_grid(date_tag ~ tag) +
   facet_wrap(~date_tag) +
   #ggplot(aes(x = hour, y = pm25_deq, color = as.factor(date), group = as.factor(date))) +
@@ -105,14 +105,14 @@ data_hourly %>%
   column_dt(c("date", "hour")) %>% 
   apply_date_tags() %>% 
   mutate(date = as.factor(date)) %>% 
-  ggplot(aes(x = hour, y = epa_2021, group = date, color = date_tag)) +
+  ggplot(aes(x = hour, y = pm25_epa_2021, group = date, color = date_tag)) +
   coord_polar() +
   geom_line()
 
 data_hourly %>% 
   filter(site_id == "6c18a7181a09037c_47107") %>% 
   column_dt(c("date", "hour")) %>% 
-  ggplot(aes(x = hour, y = epa_2021, group = date, color = date)) +
+  ggplot(aes(x = hour, y = pm25_epa_2021, group = date, color = date)) +
   geom_line() +
   geom_point()
 
@@ -131,10 +131,10 @@ data_deq %>%
 
 data_hourly %>% 
   filter(site_id == "6c18a7181a09037c_47107") %>% 
-  select(site_id, date_hour, date_tag, hour_tag, epa_2021) %>% 
+  select(site_id, date_hour, date_tag, hour_tag, pm25_epa_2021) %>% 
   full_join(data_deq %>% select(date_hour, pm25_deq)) %>% 
   drop_na() %>% 
-  mutate(per_error = ((epa_2021-pm25_deq)/pm25_deq)*100) %>% 
+  mutate(per_error = ((pm25_epa_2021-pm25_deq)/pm25_deq)*100) %>% 
   distinct() %>% 
   ggplot(aes(x = date_hour, y = per_error)) + 
   #facet_grid(site_id~.) +
@@ -147,10 +147,10 @@ data_hourly %>%
   geom_hline(yintercept = 0)
 
 data_hourly %>% 
-  select(site_id, date_hour, date_tag, hour_tag, epa_2021) %>% 
+  select(site_id, date_hour, date_tag, hour_tag, pm25_epa_2021) %>% 
   full_join(data_deq %>% select(date_hour, pm25_deq)) %>% 
   drop_na() %>% 
-  mutate(per_error = ((epa_2021-pm25_deq)/pm25_deq)*100) %>% 
+  mutate(per_error = ((pm25_epa_2021-pm25_deq)/pm25_deq)*100) %>% 
   ggplot(aes(x = date_hour, y = per_error, group = site_id)) + 
   scale_x_datetime(breaks = "1 day") +
   geom_hline(yintercept = 0) +
@@ -161,7 +161,7 @@ data_hourly %>%
 data_hourly %>% 
   drop_na() %>% 
   left_join(data_meta) %>% 
-  ggplot(aes(x = date_hour, y = epa_2021, group = site_id)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021, group = site_id)) +
   facet_wrap(~label) +
   geom_point(data = (data_hourly %>% drop_na()), color = "gray") +
   geom_point(color = "red")
@@ -169,7 +169,7 @@ data_hourly %>%
 data_hourly %>% 
   drop_na() %>% 
   left_join(data_meta) %>% 
-  ggplot(aes(x = date_hour, y = epa_2021, group = site_id)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021, group = site_id)) +
   facet_grid(label~date_tag, scales = "free_x") +
   #facet_wrap(~label, drop = FALSE) +
   geom_line(data = (data_hourly %>% drop_na()), color = "gray") +
@@ -180,12 +180,12 @@ data_hourly %>%
   drop_na() %>% 
   left_join(data_meta) %>% 
   filter(str_detect(label, "SE \\D")) %>%
-  ggplot(aes(x = date_hour, y = epa_2021, group = site_id)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021, group = site_id)) +
   #facet_grid(label~date_tag, scales = "free_x") +
   facet_grid(label~.) +
   # facet_wrap(~label) +
   geom_line(data = (data_hourly %>% drop_na()), color = "gray") +
-  geom_line(data = (data_deq %>% drop_na(pm25_deq) %>% rename(epa_2021 = pm25_deq)), color = "green") +
+  geom_line(data = (data_deq %>% drop_na(pm25_deq) %>% rename(pm25_epa_2021 = pm25_deq)), color = "green") +
   geom_line(color = "red") +
   theme_minimal() +
   scale_x_datetime(breaks = "1 day", date_labels = "%d %b") +
@@ -194,31 +194,31 @@ data_hourly %>%
 
 
 hourly_min <- data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   left_join(data_meta) %>% 
   group_by(site_id) %>% 
-  filter(epa_2021==min(epa_2021)) %>%
+  filter(pm25_epa_2021==min(pm25_epa_2021)) %>%
   distinct() %>% 
-  select(site_id, label, date_hour, epa_2021) %>% 
-  mutate(epa_2021_text = as.character(sprintf(paste0("%.", "2", "f"), round(epa_2021, digits = 2))))
+  select(site_id, label, date_hour, pm25_epa_2021) %>% 
+  mutate(epa_2021_text = as.character(sprintf(paste0("%.", "2", "f"), round(pm25_epa_2021, digits = 2))))
 
 hourly_max <- data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   left_join(data_meta) %>% 
   group_by(label) %>% 
-  filter(epa_2021==max(epa_2021)) %>%
+  filter(pm25_epa_2021==max(pm25_epa_2021)) %>%
   distinct() %>% 
-  select(site_id, label, date_hour, epa_2021) %>% 
-  mutate(epa_2021_text = as.character(sprintf(paste0("%.", "2", "f"), round(epa_2021, digits = 2))))
+  select(site_id, label, date_hour, pm25_epa_2021) %>% 
+  mutate(epa_2021_text = as.character(sprintf(paste0("%.", "2", "f"), round(pm25_epa_2021, digits = 2))))
 
 data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   left_join(data_meta) %>% 
   filter(str_detect(label, "SE \\D")) %>%
-  ggplot(aes(x = date_hour, y = epa_2021)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021)) +
   facet_grid(label~.) +
   geom_line(data = (data_hourly %>% drop_na()), color = "gray", aes(group = site_id)) +
-  geom_line(data = (data_hourly %>% ungroup() %>% group_by(date_hour) %>% summarize(epa_2021=mean(epa_2021,na.rm=TRUE))), color = "green") +
+  geom_line(data = (data_hourly %>% ungroup() %>% group_by(date_hour) %>% summarize(pm25_epa_2021=mean(pm25_epa_2021,na.rm=TRUE))), color = "green") +
   geom_line(color = "black", aes(group = site_id)) +
   geom_point(color = "black", size = 0.5) +
   geom_point(
@@ -248,14 +248,14 @@ data_hourly %>%
   theme(axis.text.x = element_text(angle = 30, hjust = 1), axis.ticks.x = element_line())
 
 extrema <- data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   left_join(data_meta) %>% 
   filter(str_detect(label, "SE \\D")) %>%
-  select(site_id, label, date_hour, epa_2021) %>% 
+  select(site_id, label, date_hour, pm25_epa_2021) %>% 
   group_by(site_id) %>% 
   mutate(
-    max = case_when(epa_2021 == max(epa_2021, na.rm=TRUE) ~ epa_2021),
-    min = case_when(epa_2021 == min(epa_2021, na.rm=TRUE) ~ epa_2021),
+    max = case_when(pm25_epa_2021 == max(pm25_epa_2021, na.rm=TRUE) ~ pm25_epa_2021),
+    min = case_when(pm25_epa_2021 == min(pm25_epa_2021, na.rm=TRUE) ~ pm25_epa_2021),
     max = as.character(sprintf(paste0("%.", "2", "f"), round(max, digits = 2))),
     min = as.character(sprintf(paste0("%.", "2", "f"), round(min, digits = 2))),
     max = na_if(max, "NA"),
@@ -266,15 +266,15 @@ library(ggrepel)
 
 # extrma_avgs 
 extrema_avg <- data_hourly %>% 
-  # drop_na(epa_2021) %>% 
+  # drop_na(pm25_epa_2021) %>% 
   # left_join(data_meta) %>% 
   # filter(str_detect(label, "SE \\D")) %>%
-  select(date_hour, epa_2021) %>% 
+  select(date_hour, pm25_epa_2021) %>% 
   group_by(date_hour) %>% 
-  summarize(epa_2021 = mean(epa_2021, na.rm = TRUE)) %>% 
+  summarize(pm25_epa_2021 = mean(pm25_epa_2021, na.rm = TRUE)) %>% 
   mutate(
-    max = case_when(epa_2021 == max(epa_2021, na.rm=TRUE) ~ epa_2021),
-    min = case_when(epa_2021 == min(epa_2021, na.rm=TRUE) ~ epa_2021),
+    max = case_when(pm25_epa_2021 == max(pm25_epa_2021, na.rm=TRUE) ~ pm25_epa_2021),
+    min = case_when(pm25_epa_2021 == min(pm25_epa_2021, na.rm=TRUE) ~ pm25_epa_2021),
     max = as.character(sprintf(paste0("%.", "2", "f"), round(max, digits = 2))),
     min = as.character(sprintf(paste0("%.", "2", "f"), round(min, digits = 2))),
     max = na_if(max, "NA"),
@@ -307,16 +307,16 @@ label_order <- data_meta %>%
 orderr <- fct_inorder(c(levels(label_order), "Average"))
 
 data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   select(date_hour) %>% 
   crossing((data_hourly %>% distinct(site_id) %>% rbind("Averages"))) %>% 
   left_join(rbind(extrema, extrema_avg)) %>%
   mutate(label = factor(label, orderr)) %>% 
-  drop_na(epa_2021) %>% 
-  ggplot(aes(x = date_hour, y = epa_2021)) +
+  drop_na(pm25_epa_2021) %>% 
+  ggplot(aes(x = date_hour, y = pm25_epa_2021)) +
   facet_grid(label~., drop=TRUE) +
   geom_line(
-    data = data_hourly %>% drop_na(epa_2021),
+    data = data_hourly %>% drop_na(pm25_epa_2021),
     color = "gray",
     aes(group = site_id)
   ) +
@@ -325,17 +325,17 @@ data_hourly %>%
 
 # Works!!
 data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   select(date_hour) %>% 
   crossing((data_hourly %>% distinct(site_id) %>% rbind("Averages"))) %>% 
   left_join(rbind(extrema, extrema_avg)) %>%
   mutate(label = factor(label, orderr)) %>% 
-  drop_na(epa_2021) %>% 
-  ggplot(aes(x = date_hour, y = epa_2021)) +
+  drop_na(pm25_epa_2021) %>% 
+  ggplot(aes(x = date_hour, y = pm25_epa_2021)) +
   facet_grid(label~.) +
   # facet_wrap(~label) +
   geom_line(
-    data = data_hourly %>% drop_na(epa_2021),
+    data = data_hourly %>% drop_na(pm25_epa_2021),
     color = "gray",
     alpha = 0.5,
     aes(group = site_id)
@@ -389,25 +389,25 @@ data_hourly %>%
 
 
 data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   left_join(data_meta) %>% 
   # filter(str_detect(label, "SE \\D")) %>%
-  select(site_id, label, date_hour, epa_2021) %>% 
+  select(site_id, label, date_hour, pm25_epa_2021) %>% 
   group_by(site_id) %>% 
   mutate(
-    max = case_when(epa_2021 == max(epa_2021, na.rm=TRUE) ~ epa_2021),
-    min = case_when(epa_2021 == min(epa_2021, na.rm=TRUE) ~ epa_2021),
+    max = case_when(pm25_epa_2021 == max(pm25_epa_2021, na.rm=TRUE) ~ pm25_epa_2021),
+    min = case_when(pm25_epa_2021 == min(pm25_epa_2021, na.rm=TRUE) ~ pm25_epa_2021),
     max = as.character(sprintf(paste0("%.", "2", "f"), round(max, digits = 2))),
     min = as.character(sprintf(paste0("%.", "2", "f"), round(min, digits = 2))),
     max = na_if(max, "NA"),
     min = na_if(min, "NA")
   ) %>% 
   distinct() %>% 
-  ggplot(aes(x = date_hour, y = epa_2021)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021)) +
   facet_wrap(~label) +
   # facet_grid(label~.) +
   geom_line(
-    data = data_hourly %>% drop_na(epa_2021),
+    data = data_hourly %>% drop_na(pm25_epa_2021),
     color = "gray",
     aes(group = site_id)
   ) +
@@ -423,7 +423,7 @@ data_hourly %>%
   #   alpha = 0.5,
   #   data = . %>% 
   #     group_by(label) %>% 
-  #     summarize(mean = mean(epa_2021,na.rm=TRUE)),
+  #     summarize(mean = mean(pm25_epa_2021,na.rm=TRUE)),
   #   aes(yintercept = mean)
   # ) +
   # geom_hline(
@@ -432,7 +432,7 @@ data_hourly %>%
   #   alpha = 0.5,
   #   data = . %>% 
   #     ungroup() %>% 
-  #     summarize(mean = mean(epa_2021, na.rm=TRUE)),
+  #     summarize(mean = mean(pm25_epa_2021, na.rm=TRUE)),
   #   aes(yintercept = mean)
   # ) +
   # # END OF AVG LINES
@@ -441,11 +441,11 @@ data_hourly %>%
     data = . %>%
       ungroup() %>%
       group_by(date_hour) %>%
-      summarize(epa_2021 = mean(epa_2021, na.rm=TRUE))
+      summarize(pm25_epa_2021 = mean(pm25_epa_2021, na.rm=TRUE))
   ) +
   geom_line(color = "black") + 
   # geom_point(
-  #   # data = data_hourly %>% drop_na(epa_2021),
+  #   # data = data_hourly %>% drop_na(pm25_epa_2021),
   #   data = . %>% filter(is.na(max), is.na(min)),
   #   color = "black",
   #   size = 1,
@@ -486,45 +486,45 @@ data_hourly %>%
 ##
 
 max_dt <- max(data_hourly$date_hour)
-mid_val <- (max(data_hourly$epa_2021, na.rm=TRUE) - min(data_hourly$epa_2021, na.rm=TRUE))/2
+mid_val <- (max(data_hourly$pm25_epa_2021, na.rm=TRUE) - min(data_hourly$pm25_epa_2021, na.rm=TRUE))/2
 
 hourly_mm <- data_hourly %>%
 # data_hourly %>% 
   group_by(site_id) %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   distinct() %>% 
   left_join(data_meta) %>% 
-  select(label, site_id, date_hour, epa_2021) %>% 
+  select(label, site_id, date_hour, pm25_epa_2021) %>% 
   mutate(
     extrema = case_when(
-      epa_2021 == max(epa_2021, na.rm=TRUE) ~ "max",
-      epa_2021 == min(epa_2021, na.rm=TRUE) ~ "min"
+      pm25_epa_2021 == max(pm25_epa_2021, na.rm=TRUE) ~ "max",
+      pm25_epa_2021 == min(pm25_epa_2021, na.rm=TRUE) ~ "min"
     )
   ) %>% 
   drop_na(extrema) %>% 
-  pivot_wider(names_from = extrema, values_from = c(epa_2021, date_hour))
+  pivot_wider(names_from = extrema, values_from = c(pm25_epa_2021, date_hour))
 
 data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   left_join(data_meta) %>% 
-  ggplot(aes(x = date_hour, y = epa_2021, group = site_id)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021, group = site_id)) +
   facet_grid(label~.) +
-  geom_line(data = data_hourly %>% drop_na(epa_2021), color = "grey") +
+  geom_line(data = data_hourly %>% drop_na(pm25_epa_2021), color = "grey") +
   geom_point() +
   geom_point(
-    data = . %>% group_by(site_id) %>% filter(epa_2021 == max(epa_2021)) %>% distinct(),
+    data = . %>% group_by(site_id) %>% filter(pm25_epa_2021 == max(pm25_epa_2021)) %>% distinct(),
     color = "red"
   ) +
   geom_text(
     data = hourly_mm,
-    # data = . %>% group_by(site_id) %>% filter(epa_2021 == max(epa_2021)) %>% distinct(),
+    # data = . %>% group_by(site_id) %>% filter(pm25_epa_2021 == max(pm25_epa_2021)) %>% distinct(),
     color = "red",
     hjust = "left",
     aes(
       x = max_dt,
       y = mid_val,
       # x = max(data_hourly$date_hour,na.rm=TRUE)+ 12*60*60,
-      # y = (max(data_hourly$epa_2021, na.rm=TRUE) - min(data_hourly$epa_2021, na.rm=TRUE))/2,
+      # y = (max(data_hourly$pm25_epa_2021, na.rm=TRUE) - min(data_hourly$pm25_epa_2021, na.rm=TRUE))/2,
       label = paste0(
         round(epa_2021_max, digits = 2), " (", format(date_hour_max, "%b %d, %H:%M"), ")\n",
         round(epa_2021_min, digits = 2), "(", format(date_hour_min, "%b %d, %H:%M"), ")"
@@ -544,15 +544,15 @@ data_hourly %>%
 single_site <- data_hourly %>%
   filter(site_id == "48618823101ce928_2045") %>% 
   select(!c(pm25_cf1_A, pm25_cf1_B, pm25_atm_A, pm25_atm_B, minute)) %>% 
-  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+  pivot_longer(cols = c(pm25_cf1, pm25_epa_2020, pm25_epa_2021, epa_atm, pm25_lrapa, pm25_atm),
                names_to = "corr",
                values_to = "pm25") %>% 
   mutate(
     corr = fct_inorder(corr),
     source = fct_collapse(corr,
       PA = c("pm25_cf1", "pm25_atm"),
-      EPA = c("epa_2020", "epa_2021", "epa_atm"),
-      LRAPA = "lrapa"
+      EPA = c("pm25_epa_2020", "pm25_epa_2021", "epa_atm"),
+      LRAPA = "pm25_lrapa"
     )
   )
 
@@ -564,33 +564,33 @@ single_site %>%
   theme(legend.position="bottom")
 
 data_diurnal %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   #filter(site_id %in% c("48618823101ce928_2045", "a20209a9fb613315_3775", "a0f18656133e64ce_2055")) %>% 
-  ggplot(aes(x=hour, y=epa_2021, group=site_id)) +
+  ggplot(aes(x=hour, y=pm25_epa_2021, group=site_id)) +
   geom_path(alpha=0.5) +
   geom_point(shape=1, alpha=0.3)
 
 # data_diurnal %>% 
 #   filter(site_id %in% c("48618823101ce928_2045", "a20209a9fb613315_3775", "a0f18656133e64ce_2055")) %>% 
-#   drop_na(epa_2021) %>% 
-#   ggplot(aes(x=hour,y=epa_2021,group=site_id)) +
+#   drop_na(pm25_epa_2021) %>% 
+#   ggplot(aes(x=hour,y=pm25_epa_2021,group=site_id)) +
 #   coord_polar() +
 #   geom_path()
 
 data_daily %>% 
-  ggplot(aes(x = date, y = epa_2021, group = site_id)) +
+  ggplot(aes(x = date, y = pm25_epa_2021, group = site_id)) +
   geom_path(alpha=0.5) +
   geom_point(shape = 1, alpha = 0.3)
 
 data_hourly %>% 
-  ggplot(aes(x = date_hour, y = epa_2021, group = site_id)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021, group = site_id)) +
   facet_grid(.~date_tag, scales="free") +
   geom_boxplot()
   #geom_point(shape = 1, alpha = 0.5)
 
 
 single_site %>% 
-  filter(corr == "epa_2021") %>% 
+  filter(corr == "pm25_epa_2021") %>% 
   ggplot(aes(x=date,y=hour, fill = pm25)) +
   geom_tile() +
   scale_fill_viridis(name = "Hrly PM25", option = "plasma") +
@@ -614,7 +614,7 @@ single_site %>%
         )
 
 single_site %>% 
-  filter(corr=="epa_2021") %>% 
+  filter(corr=="pm25_epa_2021") %>% 
   ggplot(aes(x = date, y = hour, fill = pm25, label = as.character(sprintf("%.2f", round(pm25, digits=2))))) +
   geom_tile() +
   scale_fill_viridis(option = "plasma", limits = c(0, NA)) +
@@ -629,7 +629,7 @@ single_site %>%
   )
 
 single_site %>% 
-  filter(corr=="epa_2021") %>% 
+  filter(corr=="pm25_epa_2021") %>% 
   ggplot(aes(x=hour, y=pm25, color=as.character(date))) +
   geom_line() +
   theme(legend.position="bottom")
@@ -642,7 +642,7 @@ tenn <- unique(data_meta$site_id)[1:10]
 data_hourly %>% 
   filter(site_id %in% tenn) %>% 
   left_join(data_meta) %>% 
-  ggplot(aes(x = date_hour, y = epa_2021)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021)) +
   facet_grid(label~.) +
   geom_line()
 
@@ -657,14 +657,14 @@ data_hourly %>%
   left_join(data_meta) %>% 
   ungroup() %>% 
   column_dt("date") %>% 
-  select(label, epa_2021, date_hour, date) %>% 
-  streamgraph(key="label",value="epa_2021",date="date_hour") %>% 
+  select(label, pm25_epa_2021, date_hour, date) %>% 
+  streamgraph(key="label",value="pm25_epa_2021",date="date_hour") %>% 
   sg_axis_x(1, "date_hour", "%H, %d")
 
 data_daily %>% 
 #  filter(site_id %in% tenn) %>% 
   # ungroup() %>% 
-  streamgraph("site_id", "epa_2021", "date") %>% 
+  streamgraph("site_id", "pm25_epa_2021", "date") %>% 
   sg_axis_x(1, "date", "%d")
 ```
 
@@ -673,7 +673,7 @@ library(ggridges)
 
 data_hourly %>% 
   filter(site_id %in% tenn) %>% 
-  ggplot(aes(x = epa_2021, y = site_id, fill = ..x..)) +
+  ggplot(aes(x = pm25_epa_2021, y = site_id, fill = ..x..)) +
   geom_density_ridges_gradient()+
   scale_fill_viridis(option="C")
 ```
@@ -696,15 +696,15 @@ library(leaflet)
 site_handful <- data_hourly %>% 
   filter(site_id %in% c("a20209a9fb613315_3775", "48618823101ce928_2045", "a0f18656133e64ce_2055")) %>% 
   select(!c(pm25_cf1_A, pm25_cf1_B, pm25_atm_A, pm25_atm_B, minute)) %>% 
-  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+  pivot_longer(cols = c(pm25_cf1, pm25_epa_2020, pm25_epa_2021, epa_atm, pm25_lrapa, pm25_atm),
                names_to = "corr",
                values_to = "pm25") %>% 
   mutate(
     corr = fct_inorder(corr),
     source = fct_collapse(corr,
       PA = c("pm25_cf1", "pm25_atm"),
-      EPA = c("epa_2020", "epa_2021", "epa_atm"),
-      LRAPA = "lrapa"
+      EPA = c("pm25_epa_2020", "pm25_epa_2021", "epa_atm"),
+      LRAPA = "pm25_lrapa"
     )
   ) %>% 
   left_join(data_meta)
@@ -726,14 +726,14 @@ leaflet(data=site_handful) %>%
 library(leaflet)
 data_full <- data_daily %>% 
   left_join(data_meta) %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   mutate(tag = str_extract(date_tag, ".+(?=\\\n)"))
 
 date_list <- as.character(unique(data_full$date))
 loc_list <- unique(data_full$DEVICE_LOCATIONTYPE)
 map <- leaflet(data_full) %>% 
   addProviderTiles(providers$CartoDB.DarkMatter)
-pal <- colorNumeric(palette = "viridis", domain = data_full$epa_2021)
+pal <- colorNumeric(palette = "viridis", domain = data_full$pm25_epa_2021)
 stroke_pal <- colorFactor(palette = "RdYlBu", domain = data_full$DEVICE_LOCATIONTYPE)
 
 data_labs <- data_full %>% 
@@ -745,9 +745,9 @@ pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longit
                    "<br><b>Location:</b> ", data_full$DEVICE_LOCATIONTYPE,
                   "<br><b>Internal temperature (\u00B0F):</b> ", data_full$temperature,
                   "<br><b>RH (%):</b> ", data_full$humidity,
-                  "<br><b>EPA 2020:</b> ", data_full$epa_2020,
-                  "<br><b>EPA 2021:</b> ", data_full$epa_2021,
-                  "<br><b>LRAPA:</b> ", data_full$lrapa,
+                  "<br><b>EPA 2020:</b> ", data_full$pm25_epa_2020,
+                  "<br><b>EPA 2021:</b> ", data_full$pm25_epa_2021,
+                  "<br><b>LRAPA:</b> ", data_full$pm25_lrapa,
                   "<br>(", data_full$tag, ")")
 
 # 
@@ -764,14 +764,14 @@ pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longit
         lat = ~latitude,
         color = ~stroke_pal(DEVICE_LOCATIONTYPE),
         weight = 1,
-        fillColor = ~pal(epa_2021),
-        #color = ~pal(epa_2021),
+        fillColor = ~pal(pm25_epa_2021),
+        #color = ~pal(pm25_epa_2021),
         radius = 5,
         fillOpacity = 0.5,
         #stroke = FALSE,
-        #radius = ~sqrt(epa_2021),
+        #radius = ~sqrt(pm25_epa_2021),
         group = date_single,
-        label = ~as.character(round(epa_2021, digits=2)),
+        label = ~as.character(round(pm25_epa_2021, digits=2)),
         popup = pm_popup
       )
   }
@@ -787,12 +787,12 @@ pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longit
 #       data = data_temp,
 #       lng = ~longitude,
 #       lat = ~latitude,
-#       color = ~pal(epa_2021),
+#       color = ~pal(pm25_epa_2021),
 #       radius = 5,
 #       fillOpacity = 0.5,
-#       #radius = ~sqrt(epa_2021),
+#       #radius = ~sqrt(pm25_epa_2021),
 #       group = date_single,
-#       label = ~as.character(round(epa_2021, digits=2)),
+#       label = ~as.character(round(pm25_epa_2021, digits=2)),
 #       popup = pm_popup
 #     )
 # 
@@ -811,22 +811,22 @@ map %>%
 ```{r single_leaflet}
 data_full <- data_daily %>% 
   left_join(data_meta) %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   mutate(tag = str_extract(date_tag, ".+(?=\\\n)")) %>% 
   filter(date == "2021-07-01")
 
 loc_list <- unique(data_full$DEVICE_LOCATIONTYPE)
 map <- leaflet(data_full) %>% 
   addProviderTiles(providers$CartoDB.DarkMatter)
-pal <- colorNumeric(palette = "viridis", domain = data_full$epa_2021)
+pal <- colorNumeric(palette = "viridis", domain = data_full$pm25_epa_2021)
 
 pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longitude,")",
                    "<br><b>Location:</b> ", data_full$DEVICE_LOCATIONTYPE,
                   "<br><b>Internal temperature (\u00B0F):</b> ", data_full$temperature,
                   "<br><b>RH (%):</b> ", data_full$humidity,
-                  "<br><b>EPA 2020:</b> ", data_full$epa_2020,
-                  "<br><b>EPA 2021:</b> ", data_full$epa_2021,
-                  "<br><b>LRAPA:</b> ", data_full$lrapa)
+                  "<br><b>EPA 2020:</b> ", data_full$pm25_epa_2020,
+                  "<br><b>EPA 2021:</b> ", data_full$pm25_epa_2021,
+                  "<br><b>LRAPA:</b> ", data_full$pm25_lrapa)
 
 # 
 # for (loc_single in loc_list){
@@ -843,12 +843,12 @@ pm_popup <- paste0(data_full$label," (",data_full$latitude,", ",data_full$longit
         # color = "white",
         weight = 20,
         # opacity = 0.1,
-        color = ~pal(epa_2021),
+        color = ~pal(pm25_epa_2021),
         opacity = 0.7,
-        # fillColor = ~pal(epa_2021),
+        # fillColor = ~pal(pm25_epa_2021),
         # fillOpacity = 0.5,
         group = loc_single,
-        label = ~as.character(round(epa_2021, digits=2)),
+        label = ~as.character(round(pm25_epa_2021, digits=2)),
         popup = pm_popup
       )
   }
@@ -929,15 +929,15 @@ data %>%
 
 ```{r, viz_time, eval=FALSE}
 long_set <- data_hourly %>% 
-  pivot_longer(cols = c(pm25_cf1, epa_2020, epa_2021, epa_atm, lrapa, pm25_atm),
+  pivot_longer(cols = c(pm25_cf1, pm25_epa_2020, pm25_epa_2021, epa_atm, pm25_lrapa, pm25_atm),
                names_to = "corr",
                values_to = "pm25") %>% 
   mutate(
     corr = fct_inorder(corr),
     source = fct_collapse(corr,
       PA = c("pm25_cf1", "pm25_atm"),
-      EPA = c("epa_2020", "epa_2021", "epa_atm"),
-      LRAPA = "lrapa"
+      EPA = c("pm25_epa_2020", "pm25_epa_2021", "epa_atm"),
+      LRAPA = "pm25_lrapa"
     )
   ) %>% 
   left_join(data_meta) %>% 
@@ -982,19 +982,19 @@ leveled_meta <- data_meta %>%
   # mutate(label = fct_inorder(as.factor(label)))
 
 data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   left_join(leveled_meta) %>% 
-  select(label, date_hour, DEVICE_LOCATIONTYPE, epa_2021) %>% 
+  select(label, date_hour, DEVICE_LOCATIONTYPE, pm25_epa_2021) %>% 
   full_join(
     (data_deq %>%
        select(date_hour, pm25_deq) %>%
        mutate(DEVICE_LOCATIONTYPE = "deq", label = "deq") %>%
-       rename(epa_2021=pm25_deq) %>% 
+       rename(pm25_epa_2021=pm25_deq) %>% 
        filter(date_hour >= min(data_hourly$date_hour),
               date_hour <= max(data_hourly$date_hour)))
   ) %>% 
   mutate(DEVICE_LOCATIONTYPE = factor(DEVICE_LOCATIONTYPE, levels = c("inside", "deq", "outside"))) %>% 
-  ggplot(aes(x = date_hour, y = label, fill = epa_2021)) +
+  ggplot(aes(x = date_hour, y = label, fill = pm25_epa_2021)) +
   facet_grid(DEVICE_LOCATIONTYPE~., scales="free_y", space="free_y") +
   geom_tile() +
   scale_fill_viridis(option="plasma", limits=c(0, 50))
@@ -1010,10 +1010,10 @@ data_daily %>%
   #left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:20))) %>% 
   left_join(data_meta) %>% 
   drop_na(label) %>% 
-  select(site_id, date, epa_2021, DEVICE_LOCATIONTYPE) %>% 
-  drop_na(epa_2021) %>% 
+  select(site_id, date, pm25_epa_2021, DEVICE_LOCATIONTYPE) %>% 
+  drop_na(pm25_epa_2021) %>% 
   distinct() %>% 
-  pivot_wider(names_from = date, values_from = epa_2021) %>% 
+  pivot_wider(names_from = date, values_from = pm25_epa_2021) %>% 
   ggparcoord(columns = 3:7, groupColumn = "DEVICE_LOCATIONTYPE", scale = "center")
 ```
 
@@ -1022,13 +1022,13 @@ data_hourly %>%
   column_dt(c("hour", "date")) %>% 
   ungroup() %>% 
   group_by(hour, date) %>% 
-  summarize(pm = mean(epa_2021, na.rm=TRUE)) %>% 
+  summarize(pm = mean(pm25_epa_2021, na.rm=TRUE)) %>% 
   ggplot(aes(x = hour, y = pm, color = date, group = date)) +
   geom_line()
 
 data_daily %>% 
-  select(date, epa_2021) %>% 
-  ggplot(aes(x = epa_2021)) +
+  select(date, pm25_epa_2021) %>% 
+  ggplot(aes(x = pm25_epa_2021)) +
   facet_wrap(~date) +
   geom_histogram(binwidth = 1)
 
@@ -1038,8 +1038,8 @@ high_ids <- raw_meta %>%
   pull(site_id)
 
 data_hourly %>% 
-  select(site_id, date_hour, epa_2021) %>% 
-  rename(pm = epa_2021) %>% 
+  select(site_id, date_hour, pm25_epa_2021) %>% 
+  rename(pm = pm25_epa_2021) %>% 
   rbind((data_deq %>% select(site_id, date_hour, pm25_deq) %>% rename(pm = pm25_deq))) %>% 
   filter(!site_id %in% high_ids) %>% 
   left_join(data_meta) %>% 
@@ -1049,10 +1049,10 @@ data_hourly %>%
   # left_join((data_deq_meta %>% select(site_id, DEVICE_LOCATIONTYPE)), by = "site_id")
 
 data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   filter(!site_id %in% high_ids) %>% 
   left_join(data_meta) %>% 
-  ggplot(aes(x = date_hour, y = epa_2021, color = DEVICE_LOCATIONTYPE, shape = DEVICE_LOCATIONTYPE, alpha = DEVICE_LOCATIONTYPE)) +
+  ggplot(aes(x = date_hour, y = pm25_epa_2021, color = DEVICE_LOCATIONTYPE, shape = DEVICE_LOCATIONTYPE, alpha = DEVICE_LOCATIONTYPE)) +
   geom_point(size = 2) +
   scale_alpha_manual(values = c("outside" = 0.1, "inside" = 0.5, "DEQ" = 1.0)) +
   scale_shape_manual(values = c("outside" = 16, "inside" = 18, "DEQ" = 17)) +
@@ -1061,18 +1061,18 @@ data_hourly %>%
   guides(alpha = "none")
 
 data_hourly %>% 
-  drop_na(epa_2021) %>% 
+  drop_na(pm25_epa_2021) %>% 
   filter(!site_id %in% high_ids) %>% 
   column_dt(c("date", "hour")) %>% 
   left_join(data_meta) %>% 
-  ggplot(aes(x = hour, y = epa_2021, color = date, group = date)) +
+  ggplot(aes(x = hour, y = pm25_epa_2021, color = date, group = date)) +
   geom_line()
 ```
 
 
 
 ```{r,eval=FALSE}
-ggplot(data_daily, aes(x = date, y = epa_2021, group = date)) +
+ggplot(data_daily, aes(x = date, y = pm25_epa_2021, group = date)) +
   geom_violin() + 
   geom_jitter(alpha = 0.1)
 
@@ -1081,7 +1081,7 @@ data_daily %>%
   drop_na(label) %>% 
   # mutate(date = as.character(date)) %>% 
   #filter(str_detect(label, "rd Drive")) %>% 
-  ggplot(aes(x = date, y = epa_2021, group = date)) +
+  ggplot(aes(x = date, y = pm25_epa_2021, group = date)) +
   facet_grid(DEVICE_LOCATIONTYPE~.) +
   geom_boxplot()
 
@@ -1089,14 +1089,14 @@ data_hourly %>%
   left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:20))) %>% 
   drop_na(DEVICE_LOCATIONTYPE) %>% 
   column_dt(c("date", "hour")) %>% 
-  ggplot(aes(x = hour, y = epa_2021, group = site_id)) +
+  ggplot(aes(x = hour, y = pm25_epa_2021, group = site_id)) +
   facet_grid(date~DEVICE_LOCATIONTYPE) +
   geom_point()
 
 data_hourly %>% 
   left_join((data_meta %>% filter(str_detect(label,"rd Drive")))) %>% 
   drop_na(label) %>% 
-  ggplot(aes(x = hour, y = epa_2021, color = date, group = date)) +
+  ggplot(aes(x = hour, y = pm25_epa_2021, color = date, group = date)) +
   geom_line()
 
 data_daily %>% 
@@ -1105,7 +1105,7 @@ data_daily %>%
   mutate(date = day(date)) %>% 
   streamgraph(
     key="site_id",
-    value="epa_2021",
+    value="pm25_epa_2021",
     date="date",
     scale = "continuous"
   )
@@ -1113,10 +1113,10 @@ data_daily %>%
 
 library(highcharter)
 data_hourly %>% 
-  filter(epa_2021 <= 200, str_detect(date_tag, "Before"), site_id %in% (data_meta %>% slice(1:10) %>% pull(site_id))) %>% 
+  filter(pm25_epa_2021 <= 200, str_detect(date_tag, "Before"), site_id %in% (data_meta %>% slice(1:10) %>% pull(site_id))) %>% 
   left_join(data_meta) %>% 
   # left_join((data_meta %>% group_by(DEVICE_LOCATIONTYPE) %>% slice(1:10))) %>%
   # drop_na(label) %>%
-  hchart("streamgraph", hcaes(date_hour, epa_2021, group=label))
+  hchart("streamgraph", hcaes(date_hour, pm25_epa_2021, group=label))
 ```
 
