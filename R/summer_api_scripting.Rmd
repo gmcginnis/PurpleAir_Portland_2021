@@ -66,8 +66,8 @@ input_north <- 45.6
 # The labels are based on string detection, so for instance having "STAR" will pull all that have the word "STAR" in the label.
 # Example format below. Capitalization matters!
 # \\b is added where we want only values that report those words on their own (ex. STAR-LAB and not MYSTARSYSTEM1)
-# input_labels <- c("se", "SE", "Se", "\\bSTAR\\b", "\\bPSU\\b")
-input_labels <- NULL
+input_labels <- c("se", "SE", "Se", "\\bSTAR\\b", "\\bPSU\\b")
+# input_labels <- NULL
 
 
 ## Optional grouping settings (which will NOT impact raw data output, but can be useful when graphing)
@@ -90,6 +90,10 @@ input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
 # Start hours (in a list, using full hours in 24 hour format)
 input_hour_starts <- c(5, 12, 17, 21)
 # End hours will be automatically generated
+
+# Degrees Fahrenheit difference between reported temperature (raw data) and ambient temperature
+# This will not impact correction factors, but will allow for a corrected temperature output (temperature_ambient)
+temperature_change <- 8
 ```
 
 
@@ -546,9 +550,9 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75,
     rowwise() %>% 
     mutate(
       # US-wide correction factor published in 2020
-      epa_2020 = 0.524*pm25_cf1 - 0.0852*humidity + 5.72,
+      pm25_epa_2020 = 0.524*pm25_cf1 - 0.0852*humidity + 5.72,
       # US-wide correction factor published in late 2020
-      epa_2021 = case_when(
+      pm25_epa_2021 = case_when(
         pm25_cf1 <= 343 ~ 0.52*pm25_cf1 - 0.086*humidity + 5.75,
         pm25_cf1 > 343 ~ 0.46*pm25_cf1 + (3.93*10^(-4))*(pm25_cf1^2) +2.97
       ),
@@ -560,7 +564,7 @@ apply_epa <- function(dataset, by_day = TRUE, by_hour = FALSE, epa_percent = 75,
       )
     ) %>% 
     # Setting negative values to NA
-    mutate_at(vars(epa_2020, epa_2021, epa_atm), ~replace(., which(.<0), NA))
+    mutate_at(vars(pm25_epa_2020, pm25_epa_2021, epa_atm), ~replace(., which(.<0), NA))
   
   if (keep_cols == FALSE) {
     print("Dropping extraneous columns [default]")
@@ -599,10 +603,10 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE, keep_cols = FAL
     summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
     rowwise() %>% 
     mutate(
-      lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
+      pm25_lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
       ) %>% 
     # Setting negative values to NA
-    mutate_at(vars(lrapa), ~replace(., which(.<0), NA))
+    mutate_at(vars(pm25_lrapa), ~replace(., which(.<0), NA))
   
   if (keep_cols == FALSE) {
     print("Dropping extraneous columns [default]")
@@ -614,14 +618,30 @@ apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE, keep_cols = FAL
 }
 ```
 
+```{r function_temperature}
+apply_temperature <- function(dataset, variable = temperature, change = temperature_change) {
+  
+  var_qt <- deparse(substitute(variable))
+  
+  if(var_qt %in% colnames(dataset) == TRUE & str_detect(var_qt, "_c") == FALSE) {
+    dataset <- dataset %>% 
+      mutate(temperature_ambient = {{variable}} + change)
+    print(paste("Ambient temperature column added using an adjustment of", change))
+  }
+  return(dataset)
+}
+```
+
+
 ```{r function_corrections}
-apply_corrections <- function(dataset, daily = TRUE, hourly = FALSE, epa = 75){
+apply_corrections <- function(dataset, daily = TRUE, hourly = FALSE, epa = 75, temp_change = temperature_change){
   epa <- apply_epa(dataset, by_day = daily, by_hour = hourly, epa_percent = epa, keep_cols = TRUE)
   print("EPA corrections applied")
   lrapa <- apply_lrapa(dataset, by_day = daily, by_hour = hourly, keep_cols = TRUE)
   print("LRAPA corrections applied")
   
-  dataset_corrected <- full_join(epa, lrapa)
+  dataset_corrected <- full_join(epa, lrapa) %>% 
+    apply_temperature(change = temp_change)
   print("Data frame of corrected values created")
   return(dataset_corrected)
 }
@@ -841,10 +861,15 @@ settings_units <- function(dataset = dataset, var_qt = variable_of_interest_qt,
     }
     lab_fill <- parse(text = paste0('PM[', pm_val, ']~"("', lab_unit,'")"'))
     lab_unit <- "units"
-  }
-  
-  # Adjusting color scale and labels if the variable of interest is internal temperature
-  if (str_detect(var_qt, "temp") == TRUE) {
+  } else if (str_detect(var_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
+    # Adjusting color scale and labels if the variable of interest is RH
+    lab_title_val <- "humidity"
+    lab_unit <- "%"
+    lab_fill <- paste0("Relative humidity (", lab_unit, ")")
+    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9, na.value = cap_color)
+    print("RH detected as variable of interest; adjusting labels accordingly")
+  } else if (str_detect(var_qt, "temp") == TRUE) {
+    # Adjusting color scale and labels if the variable of interest is internal temperature
     lab_title_val <- "internal temperature"
     fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15, na.value = cap_color)
     print("Temperature detected as variable of interest; adjusting labels accordingly")
@@ -856,16 +881,37 @@ settings_units <- function(dataset = dataset, var_qt = variable_of_interest_qt,
     } else { print("Temperature assumed to be in Fahrenheit") }
     
     lab_fill <- paste0("Internal temperature (", lab_unit, ")")
+    
+    if (str_detect(var_qt, "ambient") == TRUE) {
+      print("Ambient temperature (not raw/internal) detected")
+      lab_title_val <- "ambient temperature"
+      lab_fill <- paste0("Ambient temperature (", lab_unit, ")")
+    }
   }
   
-  # Adjusting color scale and labels if the variable of interest is RH
-  if (str_detect(var_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
-    lab_title_val <- "humidity"
-    lab_unit <- "%"
-    lab_fill <- paste0("Relative humidity (", lab_unit, ")")
-    fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9, na.value = cap_color)
-    print("RH detected as variable of interest; adjusting labels accordingly")
-  }
+  # # Adjusting color scale and labels if the variable of interest is internal temperature
+  # if (str_detect(var_qt, "temp") == TRUE) {
+  #   lab_title_val <- "internal temperature"
+  #   fill_colors <- scale_fill_viridis(option = "cividis", begin = 0.15, na.value = cap_color)
+  #   print("Temperature detected as variable of interest; adjusting labels accordingly")
+  #   lab_unit <- "\u00B0F"
+  #   
+  #   if (str_detect(var_qt, "_c") == TRUE) {
+  #     lab_unit <- "\u00B0C"
+  #     print("Temperature detected to be in Celsius")
+  #   } else { print("Temperature assumed to be in Fahrenheit") }
+  #   
+  #   lab_fill <- paste0("Internal temperature (", lab_unit, ")")
+  # }
+  # 
+  # # Adjusting color scale and labels if the variable of interest is RH
+  # if (str_detect(var_qt, "((H|h)umid)|(rh)|(RH)") == TRUE) {
+  #   lab_title_val <- "humidity"
+  #   lab_unit <- "%"
+  #   lab_fill <- paste0("Relative humidity (", lab_unit, ")")
+  #   fill_colors <- scale_fill_viridis(option = "mako", direction = -1, limits = c(0, 100), end = 0.9, na.value = cap_color)
+  #   print("RH detected as variable of interest; adjusting labels accordingly")
+  # }
   
   # Getting min and max values from the data set
   val_min <- dataset %>% ungroup() %>% select_at(vars(var_qt)) %>% min(na.rm = TRUE)
@@ -934,6 +980,33 @@ settings_units <- function(dataset = dataset, var_qt = variable_of_interest_qt,
 }
 ```
 
+```{r function_shapes}
+settings_shapes <- function(dataset = dataset, meta = data_meta) {
+  
+  if("DEVICE_LOCATIONTYPE" %in% colnames(dataset) == FALSE) {
+    dataset <- left_join(dataset, meta)
+  }
+  
+  # Creating a list of unique monitor locations
+  unique_locs <- unique(dataset$DEVICE_LOCATIONTYPE)
+  shape_nrow <- length(unique_locs)
+  
+  shapes_df <- data.frame(
+    "location" = c("outside", "inside", "DEQ", "average"),
+    "shape" = c(21, 23, 25, 24)
+  ) %>% 
+    filter(location %in% unique_locs)
+  
+  shape_set <- scale_shape_manual(values = setNames(shapes_df$shape, as.character(shapes_df$location)))
+  shape_guide <- guides(shape = guide_legend(override.aes = list(fill = "black", color = "black"), nrow = shape_nrow))
+  
+  return(list(
+    shape_set = shape_set,
+    shape_guide = shape_guide
+  ))
+}
+```
+
 ```{r function_filtering}
 filter_df <- function(dataframe, var = label, include = c(""), exclude = c(""), location_data = data_meta) {
   
@@ -973,7 +1046,7 @@ rounding_w_zeroes <- function(num, input_digits) {
 ```
 
 ```{r function_cap}
-add_cap <- function(dataset, var_qt, cap_value, cap_color) {
+add_cap <- function(dataset, var_qt, cap_value, cap_color, type = "filter") {
   
   # Defaults
   lab_subtitle_cap <- ""
@@ -1001,13 +1074,22 @@ add_cap <- function(dataset, var_qt, cap_value, cap_color) {
         {{cap_value}}, "; color cap not applied."
       ))
     } else if ((nrow_hi > 0) == TRUE) {
-      # Replacing the values above the set max to be NA so that they will be colored differently
-      dataset <- dataset %>% 
-        mutate_at(vars({{var_qt}}), ~replace(., which(.>={{cap_value}}), NA))
+      
+      if (type == "filter") {
+        # Replacing the values above the set max to be NA so that they will be colored differently
+        dataset <- dataset %>% 
+          mutate_at(vars({{var_qt}}), ~replace(., which(.>={{cap_value}}), NA))
+      } else if (type == "flag") {
+        dataset <- dataset %>% 
+          mutate(above_cap = case_when(
+            !!sym({{var_qt}}) >= {{cap_value}} ~ TRUE,
+            !!sym({{var_qt}}) < {{cap_value}} ~ FALSE
+          ))
+      }
       
       # Updated lab caption to include the filter
       lab_subtitle_cap <- paste0("Color scale manually capped at ",
-                             cap_value, " units; all higher values colored ", cap_color)
+                                 cap_value, " units; all higher values colored ", cap_color)
       
       # Feedback
       print(paste(
@@ -1117,20 +1199,10 @@ map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_
   # Feedback message
   print("Data now grouped and averaged. Location data added.")
   
-  # Creating a list of unique monitor locations
-  unique_locs <- unique(dataset$DEVICE_LOCATIONTYPE)
-  shape_nrow <- length(unique_locs)
+  shape_results <- settings_shapes(dataset = dataset, meta = location_data)
   
-  if (any(unique_locs == "outside") & any(unique_locs == "inside")) {
-    shapes_inout <- c("outside" = 21, "inside" = 23)
-    print("Indoor and outdoor monitors detected in data set")
-  } else if (any(unique_locs == "outside")) {
-    shapes_inout <- c("outside" = 21)
-    print("Only outdoor monitors detected in data set")
-  } else if (any(unique_locs == "inside")) {
-    shapes_inout <- c("inside" = 23)
-    print("Only indoor monitors detected in data set")
-  }
+  shape_set <- shape_results$shape_set
+  shape_guide <- shape_results$shape_guide
   
   unit_results <- settings_units(dataset = dataset, var_qt = variable_of_interest_qt,
                                 cap_color = cap_color, lab_title = "Map of")
@@ -1160,17 +1232,17 @@ map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_
     ) +
     fill_colors +
     theme_void() +
-    scale_shape_manual(values = shapes_inout) +
     theme(
       # legend.box = "vertical",
       legend.position = "bottom"
     ) + 
-    # CHANGE iS HERE
-    guides(shape = guide_legend(override.aes = list(fill="black"), nrow = shape_nrow)) +
+    shape_set +
+    shape_guide +
+    # scale_shape_manual(values = shapes_inout) +
+    # guides(shape = guide_legend(override.aes = list(fill="black"), nrow = shape_nrow)) +
     labs(
       title = paste(lab_title, lab_title_val),
       subtitle = lab_subtitle,
-      # fill = lab_pm,
       fill = lab_fill,
       shape = "Monitor location:",
       caption = paste0("Data ", lab_title_sub, "; displayed as collective average by location")
@@ -1228,7 +1300,7 @@ map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_
 ```
 
 ```{r test_map, eval=FALSE}
-map_q(data_daily, variable_of_interest = pm25_atm, grouping_vars = "date_tag", cap_value = 12)
+map_q(data_daily, variable_of_interest = pm25_epa_2021, grouping_vars = "date_tag", cap_value = 12, cap_color = "green")
 map_q(data_daily, variable_of_interest = pm25_atm, cap_value = 11)
 map_q(data_hourly, pm25_atm, cap_value = 17, cap_color = "black", grouping_vars = c("hour_tag", "date_tag"))
 ```
@@ -1365,6 +1437,7 @@ heatmap_single <- function(variable_of_interest, site_of_interest,
 ```
 
 ```{r test_heatmap_single, eval=FALSE}
+heatmap_single(pm25_epa_2021, "Sunset")
 heatmap_single(pm25_atm, "Sunset")
 heatmap_single(pm25_atm, "Sunset", cap_value = 15)
 heatmap_single(variable_of_interest = pm25_atm, site_of_interest = "Lighthouse", cap_value = 20, cap_color = "green", data_label = F)
@@ -1474,7 +1547,7 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
 ```
 
 ```{r test_heatmap, eval = FALSE}
-heatmap_cross(data_hourly, pm25_atm)
+heatmap_cross(data_hourly, pm25_epa_2021)
 heatmap_cross(data_daily, humidity, data_labels = TRUE)
 heatmap_cross(data_diurnal, pm25_atm, cap_value = 10, cap_color = "green")
 heatmap_cross(data_pm25, pm25_atm, cap_value = 50, cap_color = "green")
@@ -1482,348 +1555,12 @@ heatmap_cross(data_pm25, pm25_atm, cap_value = 50, cap_color = "green")
 
 ```{r viz_function_ts}
 ts_line <- function(dataset, variable_of_interest,
-                    add_points = FALSE, digits = 2,
-                    single_column = FALSE, label_length = 10,
-                    include_avg = TRUE, label = c(""),
-                    location_data = data_meta,
-                    min_color = "royalblue", max_color = "darkorange", avg_color = "darkgreen",
-                    start_date = input_startdate, end_date = input_enddate){
-  
-  variable_of_interest_qt <- deparse(substitute(variable_of_interest))
-  
-  # Dropping NA values from the variable of interest
-  dataset <- dataset %>% 
-    mutate("var" = {{variable_of_interest}}) %>% 
-    drop_na(var)
-  
-  location_data <- location_data %>% 
-    inner_join((dataset %>% distinct(site_id))) %>% 
-    mutate(label = make.unique(label, sep = " "))
-  
-  if (single_column == TRUE) {
-    facet <- facet_grid(label~.)
-    print("Charts will be arranged in a single column (multiple rows).")
-    location_data <- location_data %>% mutate(label = str_wrap(label, label_length))
-    print("Line breaks added to labels")
-  } else {
-    facet <- facet_wrap(~label)
-    print("Charts will be arranged in multiple rows and columns.")
-  }
-  
-  scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
-  
-  dataset <- scale_results$dataset
-  lab_title_sub <- scale_results$lab_title_sub
-  x_angle <- scale_results$x_angle
-  x_scale <- scale_results$x_scale
-  lab_dates <- scale_results$lab_caption
-  lab_caption <- paste("Black lines indiciate the data for a specific monitor of interest.",
-                       "Gray lines represent data from all monitors.",
-                       "\nMaximum and minimum values by monitor are marked by", max_color, "and", min_color, "text, respectively.")
-                       # "\nMaximum and minimum values by monitor are marked by orange and blue text, respectively.")
-  
-  unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt, cap_color = NA,
-                                 lab_title = "Timeseries of")
-  
-  lab_title <- unit_results$lab_title
-  lab_title_val <- unit_results$lab_title_val
-  lab_subtitle <- unit_results$lab_subtitle
-  lab_fill <- unit_results$lab_fill
-  y_lab <- lab_fill
-  fill_colors <- unit_results$fill_colors
-  
-  input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
-  
-  extrema <- dataset %>% 
-    left_join({{location_data}}) %>% 
-    filter(str_detect(label, input_labels)) %>%
-    select(site_id, label, timestamp, var) %>% 
-    group_by(site_id) %>% 
-    mutate(
-      max = case_when(var == max(var, na.rm = TRUE) ~ var),
-      min = case_when(var == min(var, na.rm = TRUE) ~ var),
-      date = date(timestamp)
-    ) %>% 
-    distinct() %>% 
-    group_by(site_id, date) %>% 
-    mutate_at(vars(max, min), ~replace(., duplicated(.), NA)) %>% 
-    select(!date)
-  
-  label_order <- location_data %>% 
-    select(site_id, label, latitude) %>% 
-    distinct() %>% 
-    mutate(label = fct_reorder(as.factor(label), desc(latitude))) %>% 
-    pull(label)
-  
-  if (length(unique(extrema$site_id)) == 1) {
-    include_avg <- FALSE
-    print("One monitor detected. Not plotting average.")
-  }
-  
-  if(include_avg == TRUE){
-    extrema_avg <- dataset %>% 
-      ungroup() %>% 
-      select(timestamp, var) %>% 
-      group_by(timestamp) %>% 
-      summarize(var = mean(var, na.rm = TRUE)) %>% 
-      mutate(
-        max = case_when(var == max(var, na.rm=TRUE) ~ var),
-        min = case_when(var == min(var, na.rm=TRUE) ~ var)
-      ) %>% 
-      mutate(
-        label = "AVERAGE",
-        site_id = "Averages"
-      ) %>% 
-      distinct()
-    
-    extrema <- rbind(extrema, extrema_avg)
-    
-    # Appending the "average" label onto the set
-    label_order <- fct_inorder(c(levels(label_order), "AVERAGE"))
-    
-    print("Average data added.")
-    
-    lab_caption <- paste(lab_caption, "\nThe", avg_color, "colored graph represents the moving average of all monitors in the data set.")
-    # lab_caption <- paste(lab_caption, "\nThe green graph represents the moving average of all monitors in the data set.")
-    
-  } else {
-    label_order <- fct_inorder(levels(label_order))
-    print("No averages will be added.")
-  }
-  
-  if (add_points == TRUE) {
-    data_points <- geom_point(aes(fill = var), alpha = 0.7, shape = 21, stroke = 0)
-    print("Data points will be added.")
-  } else { data_points <- NULL }
-  
-  dataset %>% 
-    select(timestamp) %>% 
-    crossing(label = as.character(label_order)) %>% 
-    left_join(extrema) %>%
-    mutate(label = factor(label, label_order)) %>%
-    drop_na(var) %>%
-    mutate(
-      max = case_when(!is.na(max) ~ rounding_w_zeroes(max, digits)),
-      min = case_when(!is.na(min) ~ rounding_w_zeroes(min, digits))
-    ) %>% 
-    ggplot(aes(x = timestamp, y = var)) +
-    facet +
-    # geom_hline(yintercept = 0, linetype = "longdash", alpha = 0.5) +
-    geom_line(
-      data = dataset %>% drop_na(var),
-      aes(group = site_id),
-      color = "gray",
-      alpha = 0.5
-    ) +
-    geom_line(
-      data = . %>% filter(site_id != "Averages"),
-      color = "black"
-    ) +
-    geom_line(
-      data = . %>% filter(site_id == "Averages"),
-      color = avg_color
-    ) +
-    data_points + 
-    fill_colors +
-    geom_point(
-      data = . %>% filter(!is.na(max)),
-      color = max_color,
-      shape = 1
-    ) +
-    geom_point(
-      data = . %>% filter(!is.na(min)),
-      color = min_color,
-      shape = 1
-    ) +
-    geom_text_repel(
-      data = . %>% mutate(max = replace_na(max, "")),
-      aes(label = max),
-      min.segment.length = 0,
-      box.padding = 0.75,
-      max.overlaps = Inf,
-      color = max_color
-    ) +
-    geom_text_repel(
-      data = . %>% mutate(min = replace_na(min, "")),
-      aes(label = min),
-      min.segment.length = 0,
-      box.padding = 0.75,
-      max.overlaps = Inf,
-      color = min_color,
-      nudge_y = max(dataset$var, na.rm = TRUE) / 3
-    ) +
-    theme_minimal() +
-    x_scale +
-    theme(
-      panel.spacing.x = unit(5, "mm"),
-      legend.position = "bottom",
-      panel.grid = element_blank(),
-      panel.border = element_blank(),
-      axis.text.x = element_text(angle = x_angle, hjust = 1),
-      axis.title.x = element_blank(),
-      axis.ticks.x = element_line()
-    ) +
-    labs(
-      title = paste(lab_title, lab_title_val, lab_title_sub),
-      subtitle = paste(lab_subtitle, lab_dates, sep = "\n"),
-      caption = lab_caption,
-      x = "Time",
-      y = y_lab,
-      fill = lab_fill
-    )
-  
-}
-```
-
-```{r test_ts, eval = FALSE}
-ts_line(data_hourly, pm25_atm)
-ts_line(data_hourly, temperature, add_points = TRUE)
-ts_line(data_hourly, pm25_atm, add_points = TRUE)
-ts_line(data_hourly, pm25_atm, label = c("\\bSTAR\\b"), single_column = TRUE)
-```
-
-```{r}
-data_daily %>% 
-  rename(pm25_epa_2021 = epa_2021) %>% 
-  map_q(., pm25_epa_2021)
-
-data_daily %>% 
-  rename(pm25_epa_2021 = epa_2021) %>% 
-  map_q(., pm25_epa_2021, "date_tag")
-
-data_hourly %>% 
-  rename(pm25_epa_2021 = epa_2021) %>% 
-  heatmap_single(pm25_epa_2021, "STAR", dataset = .)
-
-data_hourly %>% 
-  rename(pm25_epa_2021 = epa_2021) %>% 
-  # filter_df(., include = c("STAR", "SE", "NCA")) %>% 
-  heatmap_cross(., pm25_epa_2021, drop_incomplete = TRUE, cap_value = 70, cap_color = "green")
-
-data_daily %>% 
-  rename(pm25_epa_2021 = epa_2021) %>% 
-  filter_df(., include = c("STAR", "SE", "NCA", "Colby")) %>%
-  heatmap_cross(., pm25_epa_2021, drop_incomplete = TRUE, data_labels = TRUE)
-
-data_hourly %>% 
-  rename(pm25_epa_2021 = epa_2021) %>% 
-  heatmap_single(pm25_epa_2021, "Harrison", dataset = .)
-
-data_hourly %>% 
-  rename(pm25_epa_2021 = epa_2021) %>% 
-  ts_line(., pm25_epa_2021, label = c("STAR", "Woodlands"), add_points = TRUE)
-
-data_hourly %>% 
-  rename(pm25_epa_2021 = epa_2021) %>% 
-  ts_line(., pm25_epa_2021, label = c("STAR"), include_avg = FALSE)
-```
-
-
-```{r add_cap_new, eval=FALSE}
-add_cap_new <- function(dataset, var_qt, cap_value, cap_color, type = "filter") {
-  
-  # Defaults
-  lab_subtitle_cap <- ""
-  cap_guide <- guides(fill = guide_colorbar(order = 1, barwidth = 10),
-                      color = "none")
-  
-  # If manually applying a max filter value
-  if (is.na(cap_value) == FALSE) {
-    
-    nrow_ds <- nrow(dataset)
-    
-    # Getting number of rows at or above the cap
-    nrow_hi <- dataset %>% 
-      filter_at(vars({{var_qt}}), ~.>= cap_value) %>% 
-      nrow()
-    
-    if (nrow_hi == 0) {
-      print(paste0(
-        "No values of ", {{var_qt}}, " are greater than or equal to ",
-        {{cap_value}}, "; color cap not applied."
-      ))
-    } else if (nrow_hi == nrow_ds) {
-      print(paste0(
-        "All values of ", {{var_qt}}," are greater than or equal to ",
-        {{cap_value}}, "; color cap not applied."
-      ))
-    } else if ((nrow_hi > 0) == TRUE) {
-      
-      if (type == "filter") {
-        # Replacing the values above the set max to be NA so that they will be colored differently
-        dataset <- dataset %>% 
-          mutate_at(vars({{var_qt}}), ~replace(., which(.>={{cap_value}}), NA))
-      } else if (type == "flag") {
-        dataset <- dataset %>% 
-          mutate(above_cap = case_when(
-            !!sym({{var_qt}}) >= {{cap_value}} ~ TRUE,
-            !!sym({{var_qt}}) < {{cap_value}} ~ FALSE
-          ))
-      }
-      
-      # Updated lab caption to include the filter
-      lab_subtitle_cap <- paste0("Color scale manually capped at ",
-                                 cap_value, " units; all higher values colored ", cap_color)
-      
-      # Feedback
-      print(paste(
-        "Values greater than or equal to",
-        {{cap_value}}, "in", {{var_qt}},
-        "will be colored", cap_color
-      ))
-      
-      cap_guide <- guides(
-        fill = guide_colorbar(
-          order = 1,
-          barwidth = 10
-        ),
-        color = guide_legend(
-          title = paste0(cap_value, "+"),
-          order = 2,
-          title.position = "bottom",
-          title.theme = element_text(size = 8.5),
-          override.aes = list(
-            color = cap_color,
-            fill = cap_color,
-            shape = 22,
-            size = 7
-          )
-        ))
-    } else { print("Error.") }
-  }
-  
-  return(list(
-    dataset = dataset,
-    lab_subtitle_cap = lab_subtitle_cap,
-    cap_guide = cap_guide
-  ))
-}
-
-rez <- add_cap_new(data_daily, "pm25_atm", 10, "red", "flag")
-ggplot(rez$dataset, aes(x = date, y = pm25_atm, fill = pm25_atm, color = "")) + 
-  geom_point(
-    data = . %>% filter(above_cap == FALSE),
-    shape = 21
-  ) + 
-  geom_point(
-    data = . %>% filter(above_cap == TRUE),
-    shape = 21,
-    fill = "red"
-  ) +
-  rez$cap_guide +
-  theme(legend.position = "bottom")
-
-(add_cap_new(data_daily, "pm25_atm", 10, "red", "flag"))$dataset %>% select(site_id, date, pm25_atm, above_cap)
-(add_cap_new(data_daily, "pm25_atm", 10, "red"))$dataset %>% select(site_id, date, pm25_atm)
-
-```
-
-```{r ts_capped, eval=FALSE}
-ts_capped <- function(dataset, variable_of_interest,
-                    add_points = FALSE, digits = 2,
+                    add_extrema = TRUE, digits = 2,
+                    add_points = FALSE,
+                    add_average = TRUE, 
                     cap_value = NA, cap_color = "green",
+                    label_filter = c(""),
                     single_column = FALSE, label_length = 10,
-                    label = c(""), include_avg = TRUE, 
                     avg_color = "darkgreen", min_color = "royalblue", max_color = "darkorange",
                     location_data = data_meta,
                     start_date = input_startdate, end_date = input_enddate){
@@ -1857,26 +1594,15 @@ ts_capped <- function(dataset, variable_of_interest,
   lab_dates <- scale_results$lab_caption
   lab_caption <- paste("Black lines indiciate the data for a specific monitor of interest.",
                        "Gray lines represent data from all monitors.",
-                       "\nMaximum and minimum values by monitor are marked by", max_color, "and", min_color, "text, respectively.")
+                       "\nMaximum and minimum values by monitor are marked by", max_color,
+                       "and", min_color, "text, respectively.")
   
-  input_labels <- paste0("(", paste(label, collapse = ")|("), ")")
   
+  dataset <- dataset %>% 
+    left_join(location_data) %>% 
+    select(timestamp, site_id, label, DEVICE_LOCATIONTYPE, {{variable_of_interest}})
   
-  extrema <- dataset %>%
-    left_join({{location_data}}) %>%
-    filter(str_detect(label, input_labels)) %>%
-    select(site_id, timestamp, {{variable_of_interest}}) %>%
-    group_by(site_id) %>%
-    mutate(
-      date = date(timestamp),
-      max = case_when({{variable_of_interest}} == max({{variable_of_interest}}, na.rm = TRUE) ~ {{variable_of_interest}}),
-      min = case_when({{variable_of_interest}} == min({{variable_of_interest}}, na.rm = TRUE) ~ {{variable_of_interest}})
-    ) %>%
-    group_by(site_id, date) %>% 
-    mutate_at(vars(max, min), ~replace(., duplicated(.), NA)) %>%
-    ungroup() %>% 
-    select(site_id, timestamp, {{variable_of_interest}}, max, min)
-
+  input_labels <- paste0("(", paste(label_filter, collapse = ")|("), ")")
   
   label_order <- location_data %>% 
     select(site_id, label, latitude) %>% 
@@ -1884,41 +1610,48 @@ ts_capped <- function(dataset, variable_of_interest,
     mutate(label = fct_reorder(as.factor(label), desc(latitude))) %>% 
     pull(label)
   
-  if (length(unique(dataset$site_id)) == 1) {
-    include_avg <- FALSE
-    print("One monitor detected. Not plotting average.")
+  extrema <- dataset %>% 
+    filter(str_detect(label, input_labels))
+  
+  if (add_extrema == TRUE) {
+    extrema <- extrema %>% 
+      group_by(site_id) %>% 
+      mutate(
+        date = date(timestamp),
+        max = case_when({{variable_of_interest}} == max({{variable_of_interest}}, na.rm = TRUE) ~ {{variable_of_interest}}),
+        min = case_when({{variable_of_interest}} == min({{variable_of_interest}}, na.rm = TRUE) ~ {{variable_of_interest}})
+      ) %>% 
+      group_by(site_id, date) %>% 
+      mutate_at(vars(max, min), ~replace(., duplicated(.), NA)) %>% 
+      ungroup() %>% 
+      select(!date)
   }
   
-  if(include_avg == TRUE){
+  if (add_average == TRUE) {
     
-    extrema_averages <- dataset %>%
+    extrema_avg <- dataset %>% 
       ungroup() %>% 
       select(timestamp, {{variable_of_interest}}) %>%
       group_by(timestamp) %>% 
       summarize(mean = mean({{variable_of_interest}}, na.rm = TRUE)) %>% 
       mutate(
-        date = date(timestamp),
-        max = case_when({{variable_of_interest}} == max({{variable_of_interest}}, na.rm = TRUE) ~ {{variable_of_interest}}),
-        min = case_when({{variable_of_interest}} == min({{variable_of_interest}}, na.rm = TRUE) ~ {{variable_of_interest}})
-      ) %>%
-      filter_at(vars(max, min), any_vars(!is.na(.))) %>% 
-      group_by(site_id, date) %>% 
-      mutate_at(vars(max, min), ~replace(., duplicated(.), NA)) %>%
-      ungroup() %>% 
-      select(site_id, timestamp, max, min) %>% 
-      filter_at(vars(max, min), any_vars(!is.na(.)))
-    # dataset_averages <- dataset %>% 
-    #   ungroup() %>% 
-    #   select(timestamp, {{variable_of_interest}}) %>% 
-    #   group_by(timestamp) %>% 
-    #   summarize(mean = mean({{variable_of_interest}}, na.rm = TRUE)) %>% 
-    #   mutate(
-    #     max = case_when(mean == max(mean, na.rm = TRUE) ~ mean),
-    #     min = case_when(mean == min(mean, na.rm = TRUE) ~ mean),
-    #     label = "AVERAGE",
-    #     site_id = "Averages"
-    #   ) %>% 
-    #   distinct()
+        site_id = "Averages",
+        label = "AVERAGE",
+        DEVICE_LOCATIONTYPE = "average"
+      )
+    
+    if (add_extrema == TRUE) {
+      extrema_avg <- extrema_avg %>% 
+        mutate(
+          date = date(timestamp),
+          max = case_when(mean == max(mean, na.rm = TRUE) ~ mean),
+          min = case_when(mean == min(mean, na.rm = TRUE) ~ mean)
+        ) %>%
+        group_by(date, site_id, label) %>% 
+        mutate_at(vars(max, min), ~replace(., duplicated(.), NA)) %>%
+        ungroup() %>% 
+        select(!date)
+    }
     
     names(extrema_avg)[names(extrema_avg) == 'mean'] <- variable_of_interest_qt
     
@@ -1929,20 +1662,24 @@ ts_capped <- function(dataset, variable_of_interest,
     
     print("Average data added.")
     
-    lab_caption <- paste(lab_caption, "\nThe", avg_color, "colored graph represents the moving average of all monitors in the data set.")
-    # lab_caption <- paste(lab_caption, "\nThe green graph represents the moving average of all monitors in the data set.")
+    lab_caption <- paste(
+      lab_caption,
+      "\nThe", avg_color, "colored graph represents the moving average of all monitors in the data set."
+    )
     
   } else {
     label_order <- fct_inorder(levels(label_order))
     print("No averages will be added.")
   }
   
-  dataset <- dataset %>% 
-    left_join(extrema)
+  dataset_full <- dataset %>% 
+    select(!label)
+  
+  dataset <- extrema
   
   unit_results <- settings_units(dataset = dataset, var = variable_of_interest_qt,
                                  cap_color = NA, lab_title = "Timeseries of")
-  
+
   lab_title <- unit_results$lab_title
   lab_title_val <- unit_results$lab_title_val
   lab_subtitle <- unit_results$lab_subtitle
@@ -1951,67 +1688,73 @@ ts_capped <- function(dataset, variable_of_interest,
   fill_colors <- unit_results$fill_colors
   
   
-  cap_results <- add_cap_new(dataset = dataset, var_qt = variable_of_interest_qt,
-                         cap_value = cap_value, cap_color = cap_color, type = "flag")
-  
+  cap_results <- add_cap(dataset = dataset, var_qt = variable_of_interest_qt,
+                             cap_value = cap_value, cap_color = cap_color, type = "flag")
+
   dataset <- cap_results$dataset
   lab_subtitle <- paste(lab_subtitle, cap_results$lab_subtitle_cap, sep="\n")
   cap_guide <- cap_results$cap_guide
+
   
   if (add_points == TRUE) {
+    shape_results <- settings_shapes(dataset = dataset)
+    
+    shape_set <- shape_results$shape_set
+    shape_guide <- shape_results$shape_guide
+    
     data_points <- geom_point(
       aes(fill = {{variable_of_interest}}),
       alpha = 0.7,
-      shape = 21,
+      # shape = 21,
       stroke = 0
     )
     above_cap_points <- NULL
-    
+
     if ("above_cap" %in% colnames(dataset)) {
-      
       data_points <- geom_point(
         data = . %>% filter(above_cap == FALSE),
         aes(fill = {{variable_of_interest}}),
         alpha = 0.7,
-        shape = 21,
+        # shape = 21,
         stroke = 0
       )
-      
       above_cap_points <- geom_point(
         data = . %>% filter(above_cap == TRUE),
         color = {{cap_color}},
+        fill = {{cap_color}},
         # aes(fill = {{variable_of_interest}}),
         alpha = 0.7,
-        # stroke = 0
-        shape = 16
+        stroke = 0
+        # shape = 16
       )
     }
-    
+
     print("Data points will be added.")
   } else {
     data_points <- NULL
     above_cap_points <- NULL
+    shape_set <- NULL
+    shape_guide <- NULL
+  }
+
+  if (add_extrema == TRUE) {
+    dataset <- dataset %>%
+      mutate_at(vars(max, min), ~case_when(!is.na(.) ~ rounding_w_zeroes(., digits))) %>% 
+      mutate_at(vars(max, min), ~replace_na(., ""))
   }
   
-  dataset %>% 
-  # dataset %>%
-  #   select(timestamp) %>%
-  #   crossing(label = as.character(label_order)) %>%
-  #   left_join(extrema) %>%
-    mutate(
-      label = factor(label, label_order),
-      max = case_when(!is.na(max) ~ rounding_w_zeroes(max, digits)),
-      min = case_when(!is.na(min) ~ rounding_w_zeroes(min, digits))
-    ) %>% 
+  plot <- dataset %>%
+    mutate(label = factor(as.character(label), label_order)) %>%
     ggplot(aes(
       x = timestamp,
       y = {{variable_of_interest}},
-      color = ""
+      color = "",
+      group = label,
+      shape = DEVICE_LOCATIONTYPE
     )) +
     facet +
-    # geom_hline(yintercept = 0, linetype = "longdash", alpha = 0.5) +
     geom_line(
-      data = dataset %>% drop_na({{variable_of_interest}}),
+      data = dataset_full,
       aes(group = site_id),
       color = "gray",
       alpha = 0.5
@@ -2024,39 +1767,15 @@ ts_capped <- function(dataset, variable_of_interest,
       data = . %>% filter(site_id == "Averages"),
       color = avg_color
     ) +
-    data_points + 
+    data_points +
     above_cap_points +
     fill_colors +
-    geom_point(
-      data = . %>% filter(!is.na(max)),
-      color = max_color,
-      shape = 1
-    ) +
-    geom_point(
-      data = . %>% filter(!is.na(min)),
-      color = min_color,
-      shape = 1
-    ) +
-    geom_text_repel(
-      data = . %>% mutate(max = replace_na(max, "")),
-      aes(label = max),
-      min.segment.length = 0,
-      box.padding = 0.75,
-      max.overlaps = Inf,
-      color = max_color
-    ) +
-    geom_text_repel(
-      data = . %>% mutate(min = replace_na(min, "")),
-      aes(label = min),
-      min.segment.length = 0,
-      box.padding = 0.75,
-      max.overlaps = Inf,
-      color = min_color,
-      nudge_y = max(dataset %>% pull({{variable_of_interest}}), na.rm = TRUE)/3
-    ) +
-    theme_minimal() +
+    scale_color_manual(values = "transparent") +
     x_scale +
+    shape_set +
+    shape_guide +
     cap_guide +
+    theme_minimal() +
     theme(
       panel.spacing.x = unit(5, "mm"),
       legend.position = "bottom",
@@ -2072,75 +1791,62 @@ ts_capped <- function(dataset, variable_of_interest,
       caption = lab_caption,
       x = "Time",
       y = y_lab,
-      fill = lab_fill
+      fill = lab_fill,
+      shape = "Monitor location:"
     )
   
+  if (add_extrema == TRUE) {
+    plot <- plot +
+      geom_point(
+        data = . %>% filter(max != ""),
+        color = max_color,
+        shape = 1
+      ) +
+      geom_point(
+        data = . %>% filter(min != ""),
+        color = min_color,
+        shape = 1
+      ) +
+      geom_text_repel(
+        aes(label = max),
+        min.segment.length = 0,
+        box.padding = 0.75,
+        max.overlaps = Inf,
+        color = max_color
+      ) +
+      geom_text_repel(
+        aes(label = min),
+        min.segment.length = 0,
+        box.padding = 0.75,
+        max.overlaps = Inf,
+        nudge_y = max(dataset %>% pull({{variable_of_interest}}), na.rm = TRUE) / 5,
+        color = min_color
+      )
+  }
+  
+  return(plot)
 }
-
-ts_capped(data_daily, pm25_atm, T)
-ts_capped(data_daily, pm25_atm, T, cap_value = 10)
-ts_capped(data_pm25, pm25_atm, T, cap_value = 70)
 ```
 
-
-
-```{r,eval=FALSE}
-viz_line_cap <- function(dataset = data_daily, var = pm25_atm, cap = 15, capcol = "green") {
-  
-  dataset<- dataset %>% drop_na({{var}}) %>% mutate(var_orig={{var}})
-  
-  var_qt <- deparse(substitute(var))
-  
-  unit_results <- settings_units(dataset = dataset, var = var_qt, cap_color = capcol,
-                                 lab_title = "Timeseries of")
-
-  fill_colors <- unit_results$fill_colors
-
-  cap_results <- add_cap(dataset = dataset, var_qt = var_qt,
-                         cap_value = cap, cap_color = capcol)
-  
-  capped_df <- cap_results$dataset
-  
-  dataset_above <- dataset %>% anti_join(cap_results$dataset %>% select(site_id, var_qt, date,var_orig) %>% drop_na({{var}}))
-  dataset_below <- dataset %>% anti_join(dataset_above %>% select(site_id,var_qt,date,var_orig))
-  # dataset <- cap_results$dataset
-  
-  
-  cap_guide <- cap_results$cap_guide
-  
-  dataset %>% 
-    ggplot(aes(x = date, y = var_orig, group = site_id)) +
-    fill_colors +
-    cap_guide +
-    geom_point(
-      aes(fill = {{var}}, color = ""),
-      shape = 21
-    ) +
-    geom_point(data = dataset_above, fill="red", color="red") +
-    theme(legend.position="bottom")
-}
-
-viz_line_cap()
+```{r test_ts, eval = FALSE}
+ts_line(data_hourly, pm25_atm)
+ts_line(data_hourly, temperature, add_points = TRUE)
+ts_line(data_hourly, pm25_atm, add_points = TRUE)
+ts_line(data_hourly, pm25_atm, label_filter = c("\\bSTAR\\b"), single_column = TRUE)
 ```
 
-```{r}
-pm25_capp <- (add_cap(data_daily, "pm25_atm", 15, "green"))$cap_guide
+```{r aug_viz, eval=FALSE}
+map_q(data_daily, pm25_epa_2021, "date_tag")
+
+heatmap_single(pm25_epa_2021, "Harrison")
 
 data_daily %>% 
-  select(date, pm25_atm) %>% 
-  mutate(pm25 = case_when(pm25_atm <= 15 ~ pm25_atm)) %>% 
-  ggplot(aes(x=date, y=pm25_atm)) +
-  geom_point(
-    data = . %>% filter(!is.na(pm25)),
-    shape = 21,
-    aes(fill = pm25_atm, color = ""),
-    stroke = 0
-  ) +
-  geom_point(
-    data = . %>% filter(is.na(pm25)),
-    color = "green"
-  ) +
-  pm25_capp
-  
-```
+  filter_df(., include = c("STAR", "SE", "NCA", "Colby")) %>%
+  heatmap_cross(., pm25_epa_2021, drop_incomplete = TRUE, data_labels = TRUE)
 
+heatmap_cross(data_hourly, pm25_epa_2021, drop_incomplete = TRUE, cap_value = 70, cap_color = "green")
+
+ts_line(data_hourly, pm25_epa_2021, label = "STAR", include_avg = FALSE)
+
+ts_line(data_hourly, pm25_epa_2021, label = c("STAR", "Woodlands"), add_points = TRUE)
+```

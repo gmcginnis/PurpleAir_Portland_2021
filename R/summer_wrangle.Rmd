@@ -30,7 +30,7 @@ input_path_filter <- "PSU STAR LAB SEL"
 input_timezone <- "America/Los_Angeles"
 ```
 
-```{r}
+```{r inputs}
 # Optional grouping settings
 ## DATE GROUPING: group values into tags (will NOT impact raw data output, but can be useful when graphing)
 # Run date grouping? If set to "FALSE", the date inputs below will not matter (but will still appear in the environment)
@@ -51,7 +51,6 @@ input_hour_tags <- c("Morning", "Afternoon", "Evening", "Night")
 input_hour_starts <- c(5, 12, 17, 21)
 # End hours will be automatically generated
 ```
-
 
 ```{r settings}
 # list of (ORIGINAL name) variables to skip when reading file
