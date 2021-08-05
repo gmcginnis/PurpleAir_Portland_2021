@@ -1163,7 +1163,7 @@ drop_incomplete <- function(dataset, var_qt) {
 
 map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_data = data_meta,
                   cap_value = NA, cap_color = "red",
-                  start_date = input_startdate, end_date = input_enddate,
+                  # start_date = input_startdate, end_date = input_enddate,
                   point_size = 3, maptype = "toner-lite", zoom = 11, tint_alpha = 0.5, tint_color = "black"){
   
   # Warning message and halting execution if required input is missing.
@@ -1178,7 +1178,8 @@ map_q <- function(dataset, variable_of_interest, grouping_vars = NULL, location_
 
   variable_of_interest_qt <- deparse(substitute(variable_of_interest))
   
-  scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  # scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  scale_results <- settings_dt_scale(dataset = dataset)
   
   lab_title_sub <- scale_results$lab_title_sub
   lab_subtitle <- scale_results$lab_caption
@@ -1448,8 +1449,8 @@ heatmap_single(variable_of_interest = pm25_atm, site_of_interest = "Lighthouse",
 heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE,
                           cap_value = NA, cap_color = "red",
                           data_labels = FALSE, text_color = "black",
-                          location_data = data_meta, digits = 2,
-                          start_date = input_startdate, end_date = input_enddate){
+                          # start_date = input_startdate, end_date = input_enddate,
+                          location_data = data_meta, digits = 2){
   
   # Dropping NA values from the variable of interest
   # NA values will appear as gaps if viewing the complete viz, rather than gray
@@ -1491,7 +1492,8 @@ heatmap_cross <- function(dataset, variable_of_interest, drop_incomplete = FALSE
   lab_subtitle <- paste(lab_subtitle, cap_results$lab_subtitle_cap, sep="\n")
   cap_guide <- cap_results$cap_guide
   
-  scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  # scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  scale_results <- settings_dt_scale(dataset = dataset)
   
   dataset <- scale_results$dataset
   lab_title_sub <- scale_results$lab_title_sub
@@ -1563,8 +1565,8 @@ ts_line <- function(dataset, variable_of_interest,
                     label_filter = c(""),
                     single_column = FALSE, label_length = 10,
                     avg_color = "darkgreen", min_color = "royalblue", max_color = "darkorange",
-                    location_data = data_meta,
-                    start_date = input_startdate, end_date = input_enddate){
+                    # start_date = input_startdate, end_date = input_enddate,
+                    location_data = data_meta){
   
   variable_of_interest_qt <- deparse(substitute(variable_of_interest))
   
@@ -1586,7 +1588,8 @@ ts_line <- function(dataset, variable_of_interest,
     print("Charts will be arranged in multiple rows and columns.")
   }
   
-  scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  # scale_results <- settings_dt_scale(dataset = dataset, start_date = start_date, end_date = end_date)
+  scale_results <- settings_dt_scale(dataset = dataset)
   
   dataset <- scale_results$dataset
   lab_title_sub <- scale_results$lab_title_sub
@@ -1854,11 +1857,51 @@ ts_line(data_hourly, pm25_epa_2021, label = c("STAR", "Woodlands"), add_points =
 
 
 ```{r viz_ts_variation}
+tetsing <- function(pollutants){
+
+  y_lab <- ""
+  lab_title_val <- ""
+  corr <- ""
+  
+  for (i in pollutants) {
+    unit_results <- settings_units(dataset=data_hourly %>% slice(1), var = i, cap_color = NA, lab_title = "Blah")
+    
+    lab_title_val <- paste(lab_title_val, unit_results$lab_title_val, sep = ", ") %>% 
+      str_replace("(?<=,|^)([^,]*)(,\\1)+(?=,|$)", "\\1")
+    
+    if (i != "temperature" & i != "humidity") {
+      corr_new <- paste(i) %>%
+        str_replace("pm25", "") %>%
+        str_replace("temperature", "") %>%
+        str_replace("^_", "")
+    } else {
+      corr_new <- paste("raw")
+    }
+    
+    corr <- paste(corr, corr_new, sep = ", ")
+  }
+  
+  corr_final <- paste0("[", corr %>% str_replace("^, ", ""), "]")
+  
+  lab_title_val <- lab_title_val %>%
+    str_replace_all(", ", " & ") %>% 
+    str_replace("^ & ", "")
+  
+  print(paste(lab_title_val, corr_final))
+}
+
+tetsing(c("temperature_ambient", "pm25_epa_2021"))
+tetsing(c("temperature", "pm25_epa_2021"))
+tetsing(c("pm25_atm", "pm25_epa_2021"))
+tetsing("temperature")
+tetsing(c("temperature", "pm25_epa_2021"))
+
 ts_variation <- function(dataset, pollutants, group,
                          subset = c("hour", "day.hour", "day", "month"),
                          include, exclude,
                          location_data = data_meta,
                          color = "Dark2"){
+  
   if (missing(include) == FALSE) {
     dataset <- filter_df(dataset, include = include, location_data = location_data)
   }
@@ -1866,18 +1909,68 @@ ts_variation <- function(dataset, pollutants, group,
     dataset <- filter_df(dataset, exclude = exclude, location_data = location_data)
   }
   
-  if ("date" %in% colnames(dataset) == FALSE) {
-    dataset <- (settings_dt_scale(dataset))$dataset %>% rename(date = timestamp)
+  if (length(pollutants) == 1) {
+    
+    unit_results <- settings_units(dataset = dataset, var = pollutants,
+                                   cap_color = NA, lab_title = "Timeseries variation of")
+    
+    lab_title <- unit_results$lab_title
+    lab_title_val <- unit_results$lab_title_val
+    y_lab <- unit_results$lab_fill
+    
+  } else {
+    print("Multiple pollutants selected. Take caution if mixing units, as all will be plotted on ONE y-axis!")
+    lab_title <- "Timeseries variation of"
+    # y_lab <- paste(pollutants, collapse = ", ")
+    
+    y_lab <- ""
+    lab_title_val <- ""
+    corr <- ""
+    
+    for (i in pollutants) {
+      unit_results <- settings_units(dataset = dataset %>% slice(1), var = i,
+                                     cap_color = NA, lab_title = "Timeseries variation of")
+      
+      lab_title_val <- paste(lab_title_val, unit_results$lab_title_val, sep = ", ") %>% 
+        str_replace("(?<=,|^)([^,]*)(,\\1)+(?=,|$)", "\\1")
+      
+      if (i != "temperature" & i != "humidity") {
+        corr_new <- paste(i) %>%
+          str_replace("pm25", "") %>%
+          str_replace("temperature", "") %>%
+          str_replace("^_", "")
+      } else { corr_new <- paste("raw") }
+      
+      corr <- paste(corr, corr_new, sep = ", ")
+    }
+    
+    corr_final <- paste0("[", corr %>% str_replace("^, ", ""), "]")
+    
+    lab_title_val <- lab_title_val %>%
+      str_replace_all(", ", " & ") %>% 
+      str_replace("^ & ", "")
+    
+    lab_title_val <- paste(lab_title_val, corr_final)
   }
   
+  scale_results <- settings_dt_scale(dataset = dataset)
+  lab_title_sub <- scale_results$lab_title_sub
+  
+  if ("date" %in% colnames(dataset) == FALSE) {
+    # dataset <- (settings_dt_scale(dataset))$dataset %>% rename(date = timestamp)
+    dataset <- scale_results$dataset %>% rename(date = timestamp)
+  }
+  
+  title <- paste(lab_title, lab_title_val, lab_title_sub) %>% str_replace(" across time", "")
+  
   if (missing(group) == TRUE) {
-    plot <- timeVariation(dataset, pollutant = pollutants, cols = color)
+    plot_result <- timeVariation(dataset, pollutant = pollutants, cols = color, main = title, ylab = y_lab)
   } else {
     if (group %in% colnames(dataset) == TRUE) {
-      plot <- timeVariation(dataset, pollutant = pollutants, cols = color, group = group)
+      plot_result <- timeVariation(dataset, pollutant = pollutants, cols = color, main = title, ylab = y_lab, group = group)
     } else {
       print(paste("ERROR: grouping variable", group, "not found in dataset. Plot will not be grouped."))
-      plot <- timeVariation(dataset, pollutant = pollutants, cols = color)
+      plot_result <- timeVariation(dataset, pollutant = pollutants, cols = color, main = title, ylab = y_lab)
     }
   }
   
@@ -1892,7 +1985,7 @@ ts_variation <- function(dataset, pollutants, group,
   } else { pluck <- NULL }
   remove(subset)
   
-  plot_final <- plot %>%
+  plot_final <- plot_result %>%
     plot(subset = pluck)
   
   return(plot_final)
@@ -1901,8 +1994,8 @@ ts_variation <- function(dataset, pollutants, group,
 
 ```{r ts_variation_testing}
 ts_variation(data_hourly, "pm25_atm", include = "Lighthouse", group = "date_tag")
+ts_variation(data_daily, c("pm25_atm", "temperature"), include = "Lighthouse")
+
 ts_variation(data_pm25 %>% apply_date_tags(), c("pm25_atm", "pm25_lrapa"), include = "Lighthouse", group = "date_tag")
 ts_variation(data_pm25, pollutants= c("pm25_atm", "temperature"), include = "Lighthouse")
 ```
-
-
