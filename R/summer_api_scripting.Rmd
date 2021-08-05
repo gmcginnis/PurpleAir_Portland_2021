@@ -1857,45 +1857,6 @@ ts_line(data_hourly, pm25_epa_2021, label = c("STAR", "Woodlands"), add_points =
 
 
 ```{r viz_ts_variation}
-tetsing <- function(pollutants){
-
-  y_lab <- ""
-  lab_title_val <- ""
-  corr <- ""
-  
-  for (i in pollutants) {
-    unit_results <- settings_units(dataset=data_hourly %>% slice(1), var = i, cap_color = NA, lab_title = "Blah")
-    
-    lab_title_val <- paste(lab_title_val, unit_results$lab_title_val, sep = ", ") %>% 
-      str_replace("(?<=,|^)([^,]*)(,\\1)+(?=,|$)", "\\1")
-    
-    if (i != "temperature" & i != "humidity") {
-      corr_new <- paste(i) %>%
-        str_replace("pm25", "") %>%
-        str_replace("temperature", "") %>%
-        str_replace("^_", "")
-    } else {
-      corr_new <- paste("raw")
-    }
-    
-    corr <- paste(corr, corr_new, sep = ", ")
-  }
-  
-  corr_final <- paste0("[", corr %>% str_replace("^, ", ""), "]")
-  
-  lab_title_val <- lab_title_val %>%
-    str_replace_all(", ", " & ") %>% 
-    str_replace("^ & ", "")
-  
-  print(paste(lab_title_val, corr_final))
-}
-
-tetsing(c("temperature_ambient", "pm25_epa_2021"))
-tetsing(c("temperature", "pm25_epa_2021"))
-tetsing(c("pm25_atm", "pm25_epa_2021"))
-tetsing("temperature")
-tetsing(c("temperature", "pm25_epa_2021"))
-
 ts_variation <- function(dataset, pollutants, group,
                          subset = c("hour", "day.hour", "day", "month"),
                          include, exclude,
