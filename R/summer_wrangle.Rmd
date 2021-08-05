@@ -93,9 +93,6 @@ input_selects <- c(
 file_list <- list.files(path = input_path,
                         pattern = input_path_filter,
                         full.names = TRUE)
-
-input_startdate <- min((data_pa %>% column_dt("date"))$date)
-input_enddate <- max((data_pa %>% column_dt("date"))$date)
 ```
 
 ```{r location_index}
@@ -123,7 +120,7 @@ data_pa_meta <- data.frame(source = file_list) %>%
   rename(
     "longitude" = lon,
     "latitude" = lat,
-    "DEVICE_LOCATIONTYPE" = loc_inout
+    "location" = loc_inout
   ) %>% 
   mutate(
     site_id = label,
@@ -249,13 +246,32 @@ data_pa <- raw_pa_data %>%
   summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
   apply_qc() %>% 
   adjust_timezone(location_data = data_pa_meta) %>% 
+  mutate(temperature_c = unit_convert(temperature)) %>% 
+  ambient_temperature() %>% 
   select(site_id, datetime, everything())
 
 remove(cols_to_pivot)
 ```
 
+```{r start_end_dates}
+if (missing(input_startdate) == TRUE) {
+  input_startdate <- min((data_pa %>% column_dt("date"))$date)
+}
+if (missing(input_enddate) == TRUE) {
+  input_enddate <- max((data_pa %>% column_dt("date"))$date)
+}
+```
+
+
 ```{r auto_apply}
 data_pa_hourly <- apply_functions(data_pa, by_day = TRUE, by_hour = TRUE)
 data_pa_daily <- apply_functions(data_pa, by_day = TRUE, by_hour = FALSE)
 data_pa_diurnal <- apply_functions(data_pa, by_day = FALSE, by_hour = TRUE)
+
+if (run_date_grouping == TRUE){
+  data_pa <- data_pa %>% apply_date_tags()
+}
+if (run_hour_grouping == TRUE) {
+  data_pa <- data_pa %>% apply_hour_tags()
+}
 ```

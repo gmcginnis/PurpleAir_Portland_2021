@@ -1,0 +1,52 @@
+---
+title: "summer_combining"
+author: "Gillian McGinnis"
+date: "8/5/2021"
+output: pdf_document
+---
+
+```{r}
+combining_all <- function(datasets, meta_datasets) {
+  
+  data <- data.frame()
+  meta <- data.frame()
+  
+  if (missing(datasets) == FALSE){
+    ds_list <- mget(datasets)
+    
+    for (i in ds_list) {
+      data <- plyr::rbind.fill(ds_list[i], data)
+    }
+  }
+  
+  if (missing(meta_datasets) == FALSE) {
+    meta_list <- mget(meta_datasets)
+    for (i in meta_list) {
+      meta <- plyr::rbind.fill(meta_list[i], meta)
+    }
+  }
+ 
+ return(list(
+   data = data,
+   meta = meta
+ ))
+}
+
+combining_all(my_list)
+
+combining_all(list(data_daily, data_pa_daily, data_deq_daily))
+
+daily_list <- mget(ls(pattern = "_daily"))
+hourly_list <- mget(ls(pattern = "_hourly"))
+diurnal_list <- mget(ls(pattern = "_diurnal"))
+base_list <- mget(ls(pattern = "^(data_)((?!daily|hourly|diurnal).)*$"))
+ls(pattern = "(?!daily)")
+ls(pattern = "^data_deq")
+grep("(?!daily)", ls(pattern = "^data_deq"))
+
+list_all <- ls(pattern = "data_.+")
+list_daily <- str_subset(list_all, "_daily")
+list_diurnal <- str_subset(list_all, "_diurnal")
+list_hourly <- str_subset(list_all, "_hourly")
+```
+

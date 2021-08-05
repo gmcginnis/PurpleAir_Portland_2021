@@ -1889,3 +1889,44 @@ data_daily %>%
   
 ```
 
+```{r function_lrapa_old}
+apply_lrapa <- function(dataset, by_day = TRUE, by_hour = FALSE, keep_cols = FALSE) {
+  
+  if (by_day == FALSE & by_hour == FALSE) {
+    stop("INPUT ERROR: Please set `by_day` and/or `by_hour` to TRUE.")
+  } else if (by_day == TRUE & by_hour == FALSE) {
+    print("Grouping by date (24 hour averages, by day) [DEFAULT]")
+    dataset <- dataset %>% column_dt("date")
+    groupings <- vars(site_id, date)
+  } else if (by_day == TRUE & by_hour == TRUE) {
+    print("Grouping by date and hour (1 hour averages, by day)")
+    dataset <- dataset %>% column_dt("date_hour")
+    groupings <- vars(site_id, date_hour)
+  } else if (by_day == FALSE & by_hour == TRUE) {
+    print("Grouping by hour (1 hour averages)")
+    dataset <- dataset %>% column_dt("hour")
+    groupings <- vars(site_id, hour)
+  }
+  
+  dataset <- dataset %>% 
+    group_by_at(groupings) %>% 
+    summarize_if(is.numeric, mean, na.rm = TRUE) %>% 
+    rowwise() %>% 
+    mutate(
+      pm25_lrapa = case_when(pm25_cf1 <= 65 ~ 0.5 * pm25_atm - 0.66)
+      ) %>% 
+    # Setting negative values to NA
+    mutate_at(vars(pm25_lrapa), ~replace(., which(.<0), NA))
+  
+  if (keep_cols == FALSE) {
+    print("Dropping extraneous columns [default]")
+    dataset <- dataset %>% 
+      select(!intersect(c("temperature", "humidity",
+                          "temeprature_c", "temperature_ambient", "temperature_ambient_c",
+                          "pm25_cf1_A", "pm25_atm_A", "pm25_cf1_B", "pm25_atm_B",
+                          "pm25_cf1", "pm25_atm"), colnames(.)))
+  } else { print("Keeping all columns") }
+  
+  return(dataset)
+}
+```
